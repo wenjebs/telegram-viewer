@@ -9,6 +9,11 @@ dependencies = [
     "telethon>=1.37",
     "aiosqlite>=0.20",
     "python-dotenv>=1.0",
+    "insightface>=0.7.3",
+    "onnxruntime>=1.24.3",
+    "numpy>=2.4.3",
+    "scikit-learn>=1.8.0",
+    "pillow>=12.1.1",
 ]
 
 [project.optional-dependencies]
