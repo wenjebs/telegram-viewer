@@ -1,1 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+
+# Telethon
+*.session
+
+# App
+backend/cache/
+backend/*.db
+
+# Env
+.env
+
+# Node
+node_modules/
+dist/
+.output/
+
+# Worktrees
 .worktrees/
