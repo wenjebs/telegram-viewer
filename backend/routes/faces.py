@@ -126,12 +126,22 @@ async def start_scan(
 ):
     state = await get_face_scan_state(db)
     if state.get("status") in ("scanning", "clustering"):
-        return JSONResponse(
-            status_code=409,
-            content={"detail": "Scan already in progress"},
+        # Check if a scan task is actually running — if not, the state is stale
+        # from a crashed/restarted server. Reset it so the scan can resume.
+        scan_running = any(
+            not t.done() and t.get_name().startswith("face_scan")
+            for t in bg_tasks
         )
-    fire_and_forget(_run_scan(db, tg, force), bg_tasks)
-    return JSONResponse(status_code=202, content={"detail": "Scan started"})
+        if scan_running:
+            return JSONResponse(
+                status_code=409,
+                content={"detail": "Scan already in progress"},
+            )
+        # Stale state — reset to idle so scan can resume
+        await update_face_scan_state(db, status="idle")
+    task = fire_and_forget(_run_scan(db, tg, force), bg_tasks)
+    task.set_name("face_scan")
+    return {"started": True}
 
 
 @router.get("/persons")
