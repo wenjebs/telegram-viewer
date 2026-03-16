@@ -6,7 +6,7 @@
 
 **Architecture:** Single-process FastAPI backend with Telethon for Telegram API access, SQLite for metadata, and a React SPA frontend (Vite + TypeScript). Thumbnails cached locally, full files streamed on demand.
 
-**Tech Stack:** Python 3.11+, FastAPI, Telethon, SQLite (aiosqlite), React 18, TypeScript, Vite
+**Tech Stack:** Python 3.12+, FastAPI, Telethon, SQLite (aiosqlite), uv, React 19, TypeScript, TanStack Start/Router, Tailwind CSS v4, Vite, bun
 
 **Spec:** `docs/superpowers/specs/2026-03-15-telegram-viewer-design.md`
 
@@ -16,9 +16,10 @@
 
 ### Task 1: Python Project Setup
 
+**Note:** `backend/` already exists with FastAPI and uv. We need to add missing dependencies and config files.
+
 **Files:**
-- Create: `backend/pyproject.toml`
-- Create: `backend/main.py`
+- Modify: `backend/pyproject.toml` — add telethon, aiosqlite, test deps
 - Create: `backend/routes/__init__.py`
 - Create: `backend/.env.example`
 - Create: `.gitignore`
@@ -46,18 +47,22 @@ backend/*.db
 # Node
 node_modules/
 dist/
+.output/
 ```
 
-- [ ] **Step 2: Create `backend/pyproject.toml`**
+- [ ] **Step 2: Update `backend/pyproject.toml`**
+
+Add missing dependencies to the existing pyproject.toml:
 
 ```toml
 [project]
-name = "telegram-viewer"
+name = "backend"
 version = "0.1.0"
-requires-python = ">=3.11"
+description = "Telegram Media Viewer backend"
+readme = "README.md"
+requires-python = ">=3.12"
 dependencies = [
-    "fastapi>=0.115",
-    "uvicorn[standard]>=0.34",
+    "fastapi[standard]>=0.135.1",
     "telethon>=1.37",
     "aiosqlite>=0.20",
     "python-dotenv>=1.0",
@@ -83,7 +88,7 @@ TELEGRAM_API_ID=your_api_id_here
 TELEGRAM_API_HASH=your_api_hash_here
 ```
 
-- [ ] **Step 4: Create `backend/main.py`**
+- [ ] **Step 4: Update `backend/main.py`**
 
 ```python
 from fastapi import FastAPI
@@ -93,7 +98,7 @@ app = FastAPI(title="Telegram Media Viewer")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["http://localhost:3000"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -111,15 +116,13 @@ Empty file.
 - [ ] **Step 6: Install dependencies and verify**
 
 ```bash
-cd backend && python -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
+cd backend && uv sync && uv pip install -e ".[dev]"
 ```
 
 - [ ] **Step 7: Verify server starts**
 
 ```bash
-cd backend && source .venv/bin/activate
-uvicorn main:app --reload --port 8000 &
+cd backend && uv run uvicorn main:app --reload --port 8000 &
 curl http://localhost:8000/health
 # Expected: {"status":"ok"}
 kill %1
@@ -314,8 +317,7 @@ async def test_duplicate_media_ignored(db):
 - [ ] **Step 2: Run tests to verify they fail**
 
 ```bash
-cd backend && source .venv/bin/activate
-python -m pytest tests/test_database.py -v
+cd backend && uv run pytest tests/test_database.py -v
 # Expected: FAIL — cannot import database functions
 ```
 
@@ -466,8 +468,7 @@ async def get_media_by_id(db: aiosqlite.Connection, media_id: int) -> dict | Non
 - [ ] **Step 4: Run tests to verify they pass**
 
 ```bash
-cd backend && source .venv/bin/activate
-python -m pytest tests/test_database.py -v
+cd backend && uv run pytest tests/test_database.py -v
 # Expected: all PASS
 ```
 
@@ -549,8 +550,7 @@ async def test_verify_code(mock_telethon):
 - [ ] **Step 2: Run tests to verify they fail**
 
 ```bash
-cd backend && source .venv/bin/activate
-python -m pytest tests/test_telegram_client.py -v
+cd backend && uv run pytest tests/test_telegram_client.py -v
 # Expected: FAIL — cannot import TelegramClientWrapper
 ```
 
@@ -633,8 +633,7 @@ def _dialog_type(dialog) -> str:
 - [ ] **Step 4: Run tests to verify they pass**
 
 ```bash
-cd backend && source .venv/bin/activate
-python -m pytest tests/test_telegram_client.py -v
+cd backend && uv run pytest tests/test_telegram_client.py -v
 # Expected: all PASS
 ```
 
@@ -777,8 +776,7 @@ class AsyncIterator:
 - [ ] **Step 2: Run tests to verify they fail**
 
 ```bash
-cd backend && source .venv/bin/activate
-python -m pytest tests/test_indexer.py -v
+cd backend && uv run pytest tests/test_indexer.py -v
 # Expected: FAIL — cannot import index_chat
 ```
 
@@ -905,8 +903,7 @@ def _document_dimensions(doc) -> tuple[int | None, int | None, float | None]:
 - [ ] **Step 4: Run tests to verify they pass**
 
 ```bash
-cd backend && source .venv/bin/activate
-python -m pytest tests/test_indexer.py -v
+cd backend && uv run pytest tests/test_indexer.py -v
 # Expected: all PASS
 ```
 
@@ -990,8 +987,7 @@ async def test_verify_code(mock_tg):
 - [ ] **Step 2: Run tests to verify they fail**
 
 ```bash
-cd backend && source .venv/bin/activate
-python -m pytest tests/test_routes_auth.py -v
+cd backend && uv run pytest tests/test_routes_auth.py -v
 # Expected: FAIL
 ```
 
@@ -1108,7 +1104,7 @@ app = FastAPI(title="Telegram Media Viewer", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["http://localhost:3000"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -1130,8 +1126,7 @@ async def health():
 - [ ] **Step 5: Run tests to verify they pass**
 
 ```bash
-cd backend && source .venv/bin/activate
-python -m pytest tests/test_routes_auth.py -v
+cd backend && uv run pytest tests/test_routes_auth.py -v
 # Expected: all PASS
 ```
 
@@ -1208,8 +1203,7 @@ async def test_toggle_group_active(mock_tg, mock_db):
 - [ ] **Step 2: Run tests to verify they fail**
 
 ```bash
-cd backend && source .venv/bin/activate
-python -m pytest tests/test_routes_groups.py -v
+cd backend && uv run pytest tests/test_routes_groups.py -v
 # Expected: FAIL
 ```
 
@@ -1329,8 +1323,7 @@ app.include_router(groups_router)
 - [ ] **Step 5: Run tests to verify they pass**
 
 ```bash
-cd backend && source .venv/bin/activate
-python -m pytest tests/test_routes_groups.py -v
+cd backend && uv run pytest tests/test_routes_groups.py -v
 # Expected: all PASS
 ```
 
@@ -1443,8 +1436,7 @@ async def test_list_media_filter_type(seeded_db):
 - [ ] **Step 2: Run tests to verify they fail**
 
 ```bash
-cd backend && source .venv/bin/activate
-python -m pytest tests/test_routes_media.py -v
+cd backend && uv run pytest tests/test_routes_media.py -v
 # Expected: FAIL
 ```
 
@@ -1639,8 +1631,7 @@ app.include_router(media_router)
 - [ ] **Step 5: Run tests to verify they pass**
 
 ```bash
-cd backend && source .venv/bin/activate
-python -m pytest tests/test_routes_media.py -v
+cd backend && uv run pytest tests/test_routes_media.py -v
 # Expected: all PASS
 ```
 
@@ -1655,31 +1646,39 @@ git commit -m "feat: media API routes (list, thumbnail, download with file ref r
 
 ## Chunk 3: Frontend Foundation
 
-### Task 8: React Project Setup
+### Task 8: Frontend Cleanup + Dev Proxy
+
+**Note:** `frontend/` already exists with TanStack Start/Router, Tailwind CSS v4, React 19, vitest, oxlint, bun. We need to clean up the scaffold boilerplate, add the API proxy, and remove unused components.
 
 **Files:**
-- Create: `frontend/` (via Vite scaffold)
-- Modify: `frontend/vite.config.ts` — add dev proxy
-- Modify: `frontend/src/App.tsx` — clean starter
+- Modify: `frontend/vite.config.ts` — add dev proxy to backend
+- Delete: `frontend/src/components/Header.tsx` (scaffold boilerplate)
+- Delete: `frontend/src/components/Footer.tsx` (scaffold boilerplate)
+- Delete: `frontend/src/components/ThemeToggle.tsx` (scaffold boilerplate)
+- Delete: `frontend/src/routes/about.tsx` (scaffold boilerplate)
+- Modify: `frontend/src/routes/__root.tsx` — strip scaffold layout
+- Modify: `frontend/src/routes/index.tsx` — clean starter
 
-- [ ] **Step 1: Scaffold React project with Vite**
+- [ ] **Step 1: Add dev proxy to `frontend/vite.config.ts`**
 
-```bash
-cd /Users/wenjie/projects/telegram-viewer
-npm create vite@latest frontend -- --template react-ts
-cd frontend && npm install
-```
-
-- [ ] **Step 2: Configure Vite dev proxy**
-
-Replace `frontend/vite.config.ts`:
+Add a `server.proxy` config to the existing vite config. The proxy rewrites `/api/*` to `http://localhost:8000/*`:
 
 ```typescript
 import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+import { devtools } from '@tanstack/devtools-vite'
+import tsconfigPaths from 'vite-tsconfig-paths'
+import { tanstackStart } from '@tanstack/react-start/plugin/vite'
+import viteReact from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
 
-export default defineConfig({
-  plugins: [react()],
+const config = defineConfig({
+  plugins: [
+    devtools(),
+    tsconfigPaths({ projects: ['./tsconfig.json'] }),
+    tailwindcss(),
+    tanstackStart(),
+    viteReact(),
+  ],
   server: {
     proxy: {
       '/api': {
@@ -1689,63 +1688,80 @@ export default defineConfig({
     },
   },
 })
+
+export default config
 ```
 
-- [ ] **Step 3: Clean up `frontend/src/App.tsx`**
+- [ ] **Step 2: Delete scaffold boilerplate files**
+
+```bash
+cd frontend
+rm -f src/components/Header.tsx src/components/Footer.tsx src/components/ThemeToggle.tsx src/routes/about.tsx
+```
+
+- [ ] **Step 3: Simplify `frontend/src/routes/__root.tsx`**
+
+Strip the scaffold layout (Header, Footer, ThemeToggle, devtools). Keep it minimal:
 
 ```tsx
-import { useState, useEffect } from 'react'
-import './App.css'
+import { HeadContent, Outlet, Scripts, createRootRoute } from '@tanstack/react-router'
+import appCss from '#/styles.css?url'
 
-function App() {
-  const [status, setStatus] = useState<string>('loading...')
+export const Route = createRootRoute({
+  head: () => ({
+    meta: [
+      { charSet: 'utf-8' },
+      { name: 'viewport', content: 'width=device-width, initial-scale=1' },
+      { title: 'Telegram Media Viewer' },
+    ],
+    links: [{ rel: 'stylesheet', href: appCss }],
+  }),
+  shellComponent: RootDocument,
+})
 
-  useEffect(() => {
-    fetch('/api/health')
-      .then((r) => r.json())
-      .then((d) => setStatus(d.status))
-      .catch(() => setStatus('error'))
-  }, [])
-
+function RootDocument({ children }: { children: React.ReactNode }) {
   return (
-    <div>
-      <h1>Telegram Media Viewer</h1>
-      <p>Backend: {status}</p>
-    </div>
+    <html lang="en">
+      <head>
+        <HeadContent />
+      </head>
+      <body className="bg-neutral-950 text-neutral-200 font-sans antialiased">
+        {children}
+        <Scripts />
+      </body>
+    </html>
   )
 }
-
-export default App
 ```
 
-- [ ] **Step 4: Clean up `frontend/src/App.css`**
+- [ ] **Step 4: Clean up `frontend/src/routes/index.tsx`**
 
-```css
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
+```tsx
+import { createFileRoute } from '@tanstack/react-router'
 
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: #1a1a1a;
-  color: #e0e0e0;
+export const Route = createFileRoute('/')({ component: Home })
+
+function Home() {
+  return (
+    <div className="flex h-screen items-center justify-center">
+      <h1 className="text-2xl font-bold">Telegram Media Viewer</h1>
+    </div>
+  )
 }
 ```
 
 - [ ] **Step 5: Verify frontend builds**
 
 ```bash
-cd frontend && npm run build
-# Expected: successful build in dist/
+cd frontend && bun run build
+# Expected: successful build
 ```
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add frontend/
-git commit -m "feat: frontend project setup with Vite + React + dev proxy"
+git commit -m "feat: clean up frontend scaffold, add API proxy"
 ```
 
 ---
@@ -1755,6 +1771,8 @@ git commit -m "feat: frontend project setup with Vite + React + dev proxy"
 **Files:**
 - Create: `frontend/src/api/client.ts`
 - Create: `frontend/src/api/types.ts`
+
+**Note:** The `#/` path alias maps to `./src/` per tsconfig.json. Use `#/api/client` for imports.
 
 - [ ] **Step 1: Create `frontend/src/api/types.ts`**
 
@@ -1896,68 +1914,15 @@ git commit -m "feat: frontend API client and type definitions"
 
 **Files:**
 - Create: `frontend/src/components/AuthFlow.tsx`
-- Create: `frontend/src/components/AuthFlow.css`
 
-- [ ] **Step 1: Create `frontend/src/components/AuthFlow.css`**
+All styling uses Tailwind classes — no separate CSS files for components.
 
-```css
-.auth-flow {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-height: 100vh;
-  padding: 2rem;
-}
 
-.auth-flow h1 {
-  margin-bottom: 2rem;
-  font-size: 1.5rem;
-}
-
-.auth-flow form {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  width: 100%;
-  max-width: 320px;
-}
-
-.auth-flow input {
-  padding: 0.75rem;
-  border: 1px solid #444;
-  border-radius: 6px;
-  background: #2a2a2a;
-  color: #e0e0e0;
-  font-size: 1rem;
-}
-
-.auth-flow button {
-  padding: 0.75rem;
-  border: none;
-  border-radius: 6px;
-  background: #0088cc;
-  color: white;
-  font-size: 1rem;
-  cursor: pointer;
-}
-
-.auth-flow button:hover {
-  background: #006daa;
-}
-
-.auth-flow .error {
-  color: #ff6b6b;
-  font-size: 0.875rem;
-}
-```
-
-- [ ] **Step 2: Create `frontend/src/components/AuthFlow.tsx`**
+- [ ] **Step 1: Create `frontend/src/components/AuthFlow.tsx`**
 
 ```tsx
 import { useState } from 'react'
-import { sendCode, verifyCode } from '../api/client'
-import './AuthFlow.css'
+import { sendCode, verifyCode } from '#/api/client'
 
 interface Props {
   onAuthenticated: () => void
@@ -2022,69 +1987,52 @@ export default function AuthFlow({ onAuthenticated }: Props) {
     }
   }
 
+  const inputCls = 'w-full rounded-md border border-neutral-700 bg-neutral-800 px-3 py-2 text-neutral-200 placeholder:text-neutral-500 focus:border-sky-500 focus:outline-none'
+  const btnCls = 'w-full rounded-md bg-sky-600 px-4 py-2 font-medium text-white hover:bg-sky-700 disabled:opacity-50'
+
   return (
-    <div className="auth-flow">
-      <h1>Telegram Media Viewer</h1>
+    <div className="flex min-h-screen flex-col items-center justify-center p-8">
+      <h1 className="mb-8 text-2xl font-bold">Telegram Media Viewer</h1>
 
       {step === 'phone' && (
-        <form onSubmit={handleSendCode}>
-          <input
-            type="tel"
-            placeholder="+1234567890"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            required
-          />
-          <button type="submit" disabled={loading}>
+        <form onSubmit={handleSendCode} className="flex w-full max-w-xs flex-col gap-4">
+          <input type="tel" placeholder="+1234567890" value={phone} onChange={(e) => setPhone(e.target.value)} required className={inputCls} />
+          <button type="submit" disabled={loading} className={btnCls}>
             {loading ? 'Sending...' : 'Send Code'}
           </button>
         </form>
       )}
 
       {step === 'code' && (
-        <form onSubmit={handleVerifyCode}>
-          <p>Enter the code sent to {phone}</p>
-          <input
-            type="text"
-            placeholder="12345"
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            required
-            autoFocus
-          />
-          <button type="submit" disabled={loading}>
+        <form onSubmit={handleVerifyCode} className="flex w-full max-w-xs flex-col gap-4">
+          <p className="text-sm text-neutral-400">Enter the code sent to {phone}</p>
+          <input type="text" placeholder="12345" value={code} onChange={(e) => setCode(e.target.value)} required autoFocus className={inputCls} />
+          <button type="submit" disabled={loading} className={btnCls}>
             {loading ? 'Verifying...' : 'Verify'}
           </button>
         </form>
       )}
 
       {step === 'password' && (
-        <form onSubmit={handlePassword}>
-          <p>Enter your 2FA password</p>
-          <input
-            type="password"
-            placeholder="2FA Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            autoFocus
-          />
-          <button type="submit" disabled={loading}>
+        <form onSubmit={handlePassword} className="flex w-full max-w-xs flex-col gap-4">
+          <p className="text-sm text-neutral-400">Enter your 2FA password</p>
+          <input type="password" placeholder="2FA Password" value={password} onChange={(e) => setPassword(e.target.value)} required autoFocus className={inputCls} />
+          <button type="submit" disabled={loading} className={btnCls}>
             {loading ? 'Verifying...' : 'Submit'}
           </button>
         </form>
       )}
 
-      {error && <p className="error">{error}</p>}
+      {error && <p className="mt-4 text-sm text-red-400">{error}</p>}
     </div>
   )
 }
 ```
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 2: Commit**
 
 ```bash
-git add frontend/src/components/AuthFlow.tsx frontend/src/components/AuthFlow.css
+git add frontend/src/components/AuthFlow.tsx
 git commit -m "feat: AuthFlow component (phone, code, 2FA steps)"
 ```
 
@@ -2096,15 +2044,14 @@ git commit -m "feat: AuthFlow component (phone, code, 2FA steps)"
 
 **Files:**
 - Create: `frontend/src/components/Sidebar.tsx`
-- Create: `frontend/src/components/Sidebar.css`
 - Create: `frontend/src/hooks/useGroups.ts`
 
 - [ ] **Step 1: Create `frontend/src/hooks/useGroups.ts`**
 
 ```typescript
 import { useState, useEffect, useCallback } from 'react'
-import type { Group } from '../api/types'
-import { getGroups, toggleGroupActive } from '../api/client'
+import type { Group } from '#/api/types'
+import { getGroups, toggleGroupActive } from '#/api/client'
 
 export function useGroups() {
   const [groups, setGroups] = useState<Group[]>([])
@@ -2142,95 +2089,10 @@ export function useGroups() {
 }
 ```
 
-- [ ] **Step 2: Create `frontend/src/components/Sidebar.css`**
-
-```css
-.sidebar {
-  width: 280px;
-  min-width: 280px;
-  background: #222;
-  border-right: 1px solid #333;
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  overflow-y: auto;
-}
-
-.sidebar h2 {
-  padding: 1rem;
-  font-size: 1rem;
-  border-bottom: 1px solid #333;
-}
-
-.sidebar .groups-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 0.5rem;
-}
-
-.sidebar .group-item {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.875rem;
-}
-
-.sidebar .group-item:hover {
-  background: #2a2a2a;
-}
-
-.sidebar .group-item input[type="checkbox"] {
-  accent-color: #0088cc;
-}
-
-.sidebar .type-filter {
-  display: flex;
-  gap: 0.25rem;
-  padding: 0.75rem;
-  border-top: 1px solid #333;
-}
-
-.sidebar .type-filter button {
-  flex: 1;
-  padding: 0.4rem;
-  border: 1px solid #444;
-  border-radius: 4px;
-  background: transparent;
-  color: #e0e0e0;
-  cursor: pointer;
-  font-size: 0.75rem;
-}
-
-.sidebar .type-filter button.active {
-  background: #0088cc;
-  border-color: #0088cc;
-}
-
-.sidebar .sync-btn {
-  margin: 0.75rem;
-  padding: 0.6rem;
-  border: none;
-  border-radius: 6px;
-  background: #0088cc;
-  color: white;
-  cursor: pointer;
-  font-size: 0.875rem;
-}
-
-.sidebar .sync-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-```
-
-- [ ] **Step 3: Create `frontend/src/components/Sidebar.tsx`**
+- [ ] **Step 2: Create `frontend/src/components/Sidebar.tsx`**
 
 ```tsx
-import type { Group } from '../api/types'
-import './Sidebar.css'
+import type { Group } from '#/api/types'
 
 interface Props {
   groups: Group[]
@@ -2247,41 +2109,34 @@ const TYPE_OPTIONS: { label: string; value: string | null }[] = [
   { label: 'Videos', value: 'video' },
 ]
 
-export default function Sidebar({
-  groups,
-  onToggleGroup,
-  mediaTypeFilter,
-  onMediaTypeFilter,
-  onSync,
-  syncing,
-}: Props) {
+export default function Sidebar({ groups, onToggleGroup, mediaTypeFilter, onMediaTypeFilter, onSync, syncing }: Props) {
   return (
-    <aside className="sidebar">
-      <h2>Groups</h2>
-      <div className="groups-list">
+    <aside className="flex h-screen w-70 min-w-70 flex-col border-r border-neutral-800 bg-neutral-900">
+      <h2 className="border-b border-neutral-800 p-4 text-sm font-semibold">Groups</h2>
+      <div className="flex-1 overflow-y-auto p-2">
         {groups.map((g) => (
-          <label key={g.id} className="group-item">
-            <input
-              type="checkbox"
-              checked={g.active}
-              onChange={() => onToggleGroup(g)}
-            />
+          <label key={g.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-neutral-800">
+            <input type="checkbox" checked={g.active} onChange={() => onToggleGroup(g)} className="accent-sky-500" />
             <span>{g.name}</span>
           </label>
         ))}
       </div>
-      <div className="type-filter">
+      <div className="flex gap-1 border-t border-neutral-800 p-3">
         {TYPE_OPTIONS.map((opt) => (
           <button
             key={opt.label}
-            className={mediaTypeFilter === opt.value ? 'active' : ''}
+            className={`flex-1 rounded px-2 py-1 text-xs ${mediaTypeFilter === opt.value ? 'bg-sky-600 text-white' : 'border border-neutral-700 text-neutral-300'}`}
             onClick={() => onMediaTypeFilter(opt.value)}
           >
             {opt.label}
           </button>
         ))}
       </div>
-      <button className="sync-btn" onClick={onSync} disabled={syncing}>
+      <button
+        className="m-3 rounded-md bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-50"
+        onClick={onSync}
+        disabled={syncing}
+      >
         {syncing ? 'Syncing...' : 'Sync Active Groups'}
       </button>
     </aside>
@@ -2289,10 +2144,10 @@ export default function Sidebar({
 }
 ```
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
-git add frontend/src/hooks/useGroups.ts frontend/src/components/Sidebar.tsx frontend/src/components/Sidebar.css
+git add frontend/src/hooks/useGroups.ts frontend/src/components/Sidebar.tsx
 git commit -m "feat: Sidebar component with group selector and media type filter"
 ```
 
@@ -2303,7 +2158,6 @@ git commit -m "feat: Sidebar component with group selector and media type filter
 **Files:**
 - Create: `frontend/src/hooks/useMedia.ts`
 - Create: `frontend/src/components/MediaGrid.tsx`
-- Create: `frontend/src/components/MediaGrid.css`
 - Create: `frontend/src/components/MediaCard.tsx`
 - Create: `frontend/src/components/DateHeader.tsx`
 
@@ -2311,8 +2165,8 @@ git commit -m "feat: Sidebar component with group selector and media type filter
 
 ```typescript
 import { useState, useCallback } from 'react'
-import type { MediaItem } from '../api/types'
-import { getMedia } from '../api/client'
+import type { MediaItem } from '#/api/types'
+import { getMedia } from '#/api/client'
 
 export function useMedia() {
   const [items, setItems] = useState<MediaItem[]>([])
@@ -2355,26 +2209,22 @@ export function useMedia() {
 - [ ] **Step 2: Create `frontend/src/components/DateHeader.tsx`**
 
 ```tsx
-interface Props {
-  date: string
-}
-
-export default function DateHeader({ date }: Props) {
+export default function DateHeader({ date }: { date: string }) {
   const formatted = new Date(date).toLocaleDateString('en-US', {
     weekday: 'long',
     year: 'numeric',
     month: 'long',
     day: 'numeric',
   })
-  return <h3 className="date-header">{formatted}</h3>
+  return <h3 className="mt-4 border-b border-neutral-800 pb-2 text-sm text-neutral-500 first:mt-0">{formatted}</h3>
 }
 ```
 
 - [ ] **Step 3: Create `frontend/src/components/MediaCard.tsx`**
 
 ```tsx
-import type { MediaItem } from '../api/types'
-import { getThumbnailUrl } from '../api/client'
+import type { MediaItem } from '#/api/types'
+import { getThumbnailUrl } from '#/api/client'
 
 interface Props {
   item: MediaItem
@@ -2385,15 +2235,11 @@ export default function MediaCard({ item, onClick }: Props) {
   const isVideo = item.media_type === 'video'
 
   return (
-    <div className="media-card" onClick={onClick}>
-      <img
-        src={getThumbnailUrl(item.id)}
-        alt={item.caption || ''}
-        loading="lazy"
-      />
-      {isVideo && <div className="video-badge">&#9654;</div>}
-      {isVideo && item.duration && (
-        <div className="duration-badge">{formatDuration(item.duration)}</div>
+    <div className="relative aspect-square cursor-pointer overflow-hidden rounded bg-neutral-800" onClick={onClick}>
+      <img src={getThumbnailUrl(item.id)} alt={item.caption || ''} loading="lazy" className="h-full w-full object-cover" />
+      {isVideo && <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-3xl text-white drop-shadow-lg">&#9654;</div>}
+      {isVideo && item.duration != null && (
+        <div className="absolute bottom-1 right-1 rounded bg-black/70 px-1.5 py-0.5 text-xs text-white">{formatDuration(item.duration)}</div>
       )}
     </div>
   )
@@ -2406,95 +2252,12 @@ function formatDuration(seconds: number): string {
 }
 ```
 
-- [ ] **Step 4: Create `frontend/src/components/MediaGrid.css`**
-
-```css
-.media-grid-container {
-  flex: 1;
-  overflow-y: auto;
-  padding: 1rem;
-}
-
-.date-header {
-  font-size: 0.875rem;
-  color: #888;
-  padding: 0.5rem 0;
-  margin-top: 1rem;
-  border-bottom: 1px solid #333;
-}
-
-.date-header:first-child {
-  margin-top: 0;
-}
-
-.media-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 4px;
-  margin-top: 0.5rem;
-}
-
-.media-card {
-  position: relative;
-  aspect-ratio: 1;
-  cursor: pointer;
-  overflow: hidden;
-  border-radius: 4px;
-  background: #2a2a2a;
-}
-
-.media-card img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.media-card .video-badge {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  font-size: 2rem;
-  color: white;
-  text-shadow: 0 0 8px rgba(0, 0, 0, 0.7);
-  pointer-events: none;
-}
-
-.media-card .duration-badge {
-  position: absolute;
-  bottom: 4px;
-  right: 4px;
-  background: rgba(0, 0, 0, 0.7);
-  color: white;
-  font-size: 0.75rem;
-  padding: 2px 6px;
-  border-radius: 3px;
-}
-
-.load-more {
-  display: block;
-  margin: 1.5rem auto;
-  padding: 0.6rem 2rem;
-  border: 1px solid #444;
-  border-radius: 6px;
-  background: transparent;
-  color: #e0e0e0;
-  cursor: pointer;
-  font-size: 0.875rem;
-}
-
-.load-more:hover {
-  background: #2a2a2a;
-}
-```
-
-- [ ] **Step 5: Create `frontend/src/components/MediaGrid.tsx`**
+- [ ] **Step 4: Create `frontend/src/components/MediaGrid.tsx`**
 
 ```tsx
-import type { MediaItem } from '../api/types'
+import type { MediaItem } from '#/api/types'
 import MediaCard from './MediaCard'
 import DateHeader from './DateHeader'
-import './MediaGrid.css'
 
 interface Props {
   items: MediaItem[]
@@ -2509,20 +2272,18 @@ export default function MediaGrid({ items, hasMore, loading, onLoadMore, onItemC
 
   if (items.length === 0 && !loading) {
     return (
-      <div className="media-grid-container">
-        <p style={{ textAlign: 'center', color: '#888', marginTop: '4rem' }}>
-          No media found. Select some groups and sync to get started.
-        </p>
+      <div className="flex flex-1 items-center justify-center text-neutral-500">
+        No media found. Select some groups and sync to get started.
       </div>
     )
   }
 
   return (
-    <div className="media-grid-container">
+    <div className="flex-1 overflow-y-auto p-4">
       {grouped.map(([date, dateItems]) => (
         <div key={date}>
           <DateHeader date={date} />
-          <div className="media-grid">
+          <div className="mt-2 grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-1">
             {dateItems.map((item) => (
               <MediaCard key={item.id} item={item} onClick={() => onItemClick(item)} />
             ))}
@@ -2530,7 +2291,11 @@ export default function MediaGrid({ items, hasMore, loading, onLoadMore, onItemC
         </div>
       ))}
       {hasMore && (
-        <button className="load-more" onClick={onLoadMore} disabled={loading}>
+        <button
+          className="mx-auto mt-6 block rounded-md border border-neutral-700 px-6 py-2 text-sm text-neutral-300 hover:bg-neutral-800 disabled:opacity-50"
+          onClick={onLoadMore}
+          disabled={loading}
+        >
           {loading ? 'Loading...' : 'Load more'}
         </button>
       )}
@@ -2553,10 +2318,10 @@ function groupByDate(items: MediaItem[]): [string, MediaItem[]][] {
 }
 ```
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add frontend/src/hooks/useMedia.ts frontend/src/components/DateHeader.tsx frontend/src/components/MediaCard.tsx frontend/src/components/MediaGrid.tsx frontend/src/components/MediaGrid.css
+git add frontend/src/hooks/useMedia.ts frontend/src/components/DateHeader.tsx frontend/src/components/MediaCard.tsx frontend/src/components/MediaGrid.tsx
 git commit -m "feat: MediaGrid, MediaCard, DateHeader components with date grouping"
 ```
 
@@ -2566,103 +2331,13 @@ git commit -m "feat: MediaGrid, MediaCard, DateHeader components with date group
 
 **Files:**
 - Create: `frontend/src/components/Lightbox.tsx`
-- Create: `frontend/src/components/Lightbox.css`
 
-- [ ] **Step 1: Create `frontend/src/components/Lightbox.css`**
-
-```css
-.lightbox-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.9);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.lightbox-content {
-  position: relative;
-  max-width: 90vw;
-  max-height: 90vh;
-}
-
-.lightbox-content img,
-.lightbox-content video {
-  max-width: 90vw;
-  max-height: 85vh;
-  object-fit: contain;
-  border-radius: 4px;
-}
-
-.lightbox-close {
-  position: absolute;
-  top: -2rem;
-  right: 0;
-  background: none;
-  border: none;
-  color: white;
-  font-size: 1.5rem;
-  cursor: pointer;
-}
-
-.lightbox-nav {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  background: rgba(0, 0, 0, 0.5);
-  border: none;
-  color: white;
-  font-size: 2rem;
-  padding: 1rem 0.75rem;
-  cursor: pointer;
-  border-radius: 4px;
-}
-
-.lightbox-nav.prev {
-  left: -3.5rem;
-}
-
-.lightbox-nav.next {
-  right: -3.5rem;
-}
-
-.lightbox-toolbar {
-  display: flex;
-  justify-content: center;
-  gap: 1rem;
-  margin-top: 0.75rem;
-}
-
-.lightbox-toolbar button {
-  padding: 0.5rem 1.5rem;
-  border: 1px solid #555;
-  border-radius: 6px;
-  background: transparent;
-  color: white;
-  cursor: pointer;
-  font-size: 0.875rem;
-}
-
-.lightbox-toolbar button:hover {
-  background: #333;
-}
-
-.lightbox-caption {
-  text-align: center;
-  color: #aaa;
-  font-size: 0.875rem;
-  margin-top: 0.5rem;
-}
-```
-
-- [ ] **Step 2: Create `frontend/src/components/Lightbox.tsx`**
+- [ ] **Step 1: Create `frontend/src/components/Lightbox.tsx`**
 
 ```tsx
 import { useEffect, useCallback } from 'react'
-import type { MediaItem } from '../api/types'
-import { getDownloadUrl, getThumbnailUrl } from '../api/client'
-import './Lightbox.css'
+import type { MediaItem } from '#/api/types'
+import { getDownloadUrl } from '#/api/client'
 
 interface Props {
   item: MediaItem
@@ -2698,108 +2373,82 @@ export default function Lightbox({ item, onClose, onPrev, onNext, hasPrev, hasNe
     a.click()
   }
 
-  return (
-    <div className="lightbox-overlay" onClick={onClose}>
-      <div className="lightbox-content" onClick={(e) => e.stopPropagation()}>
-        <button className="lightbox-close" onClick={onClose}>
-          &times;
-        </button>
+  const navBtnCls = 'absolute top-1/2 -translate-y-1/2 rounded bg-black/50 px-3 py-4 text-2xl text-white hover:bg-black/70'
 
-        {hasPrev && (
-          <button className="lightbox-nav prev" onClick={onPrev}>
-            &#8249;
-          </button>
-        )}
-        {hasNext && (
-          <button className="lightbox-nav next" onClick={onNext}>
-            &#8250;
-          </button>
-        )}
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90" onClick={onClose}>
+      <div className="relative max-h-[90vh] max-w-[90vw]" onClick={(e) => e.stopPropagation()}>
+        <button className="absolute -top-8 right-0 text-xl text-white" onClick={onClose}>&times;</button>
+
+        {hasPrev && <button className={`${navBtnCls} -left-14`} onClick={onPrev}>&#8249;</button>}
+        {hasNext && <button className={`${navBtnCls} -right-14`} onClick={onNext}>&#8250;</button>}
 
         {isVideo ? (
-          <video src={downloadUrl} controls autoPlay />
+          <video src={downloadUrl} controls autoPlay className="max-h-[85vh] max-w-[90vw] rounded object-contain" />
         ) : (
-          <img src={downloadUrl} alt={item.caption || ''} />
+          <img src={downloadUrl} alt={item.caption || ''} className="max-h-[85vh] max-w-[90vw] rounded object-contain" />
         )}
 
-        <div className="lightbox-toolbar">
-          <button onClick={handleDownload}>Download</button>
+        <div className="mt-3 flex justify-center">
+          <button className="rounded-md border border-neutral-600 px-6 py-2 text-sm text-white hover:bg-neutral-800" onClick={handleDownload}>
+            Download
+          </button>
         </div>
 
-        {item.caption && <p className="lightbox-caption">{item.caption}</p>}
+        {item.caption && <p className="mt-2 text-center text-sm text-neutral-400">{item.caption}</p>}
       </div>
     </div>
   )
 }
 ```
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 2: Commit**
 
 ```bash
-git add frontend/src/components/Lightbox.tsx frontend/src/components/Lightbox.css
+git add frontend/src/components/Lightbox.tsx
 git commit -m "feat: Lightbox component with keyboard nav and download"
 ```
 
 ---
 
-### Task 14: Wire Up App.tsx
+### Task 14: Wire Up Index Route
+
+**Note:** With TanStack Router, there is no `App.tsx`. The main view lives in `frontend/src/routes/index.tsx` (the `/` route).
 
 **Files:**
-- Modify: `frontend/src/App.tsx`
-- Modify: `frontend/src/App.css`
+- Modify: `frontend/src/routes/index.tsx`
 
-- [ ] **Step 1: Update `frontend/src/App.css`**
-
-```css
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: #1a1a1a;
-  color: #e0e0e0;
-}
-
-.app-layout {
-  display: flex;
-  height: 100vh;
-}
-```
-
-- [ ] **Step 2: Update `frontend/src/App.tsx`**
+- [ ] **Step 1: Update `frontend/src/routes/index.tsx`**
 
 ```tsx
-import { useState, useEffect, useCallback } from 'react'
-import { getAuthStatus, syncGroup } from './api/client'
-import type { MediaItem } from './api/types'
-import AuthFlow from './components/AuthFlow'
-import Sidebar from './components/Sidebar'
-import MediaGrid from './components/MediaGrid'
-import Lightbox from './components/Lightbox'
-import { useGroups } from './hooks/useGroups'
-import { useMedia } from './hooks/useMedia'
-import './App.css'
+import { useState, useEffect } from 'react'
+import { createFileRoute } from '@tanstack/react-router'
+import { getAuthStatus, syncGroup } from '#/api/client'
+import type { MediaItem } from '#/api/types'
+import AuthFlow from '#/components/AuthFlow'
+import Sidebar from '#/components/Sidebar'
+import MediaGrid from '#/components/MediaGrid'
+import Lightbox from '#/components/Lightbox'
+import { useGroups } from '#/hooks/useGroups'
+import { useMedia } from '#/hooks/useMedia'
 
-function App() {
+export const Route = createFileRoute('/')({ component: Home })
+
+function Home() {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null)
   const [mediaTypeFilter, setMediaTypeFilter] = useState<string | null>(null)
   const [selectedItem, setSelectedItem] = useState<MediaItem | null>(null)
   const [syncing, setSyncing] = useState(false)
 
-  const { groups, toggleActive, activeGroupIds, refetch: refetchGroups } = useGroups()
+  const { groups, toggleActive, activeGroupIds } = useGroups()
   const { items, loading, hasMore, fetchMedia, reset } = useMedia()
 
-  // Check auth on mount
   useEffect(() => {
     getAuthStatus()
       .then((s) => setAuthenticated(s.authenticated))
       .catch(() => setAuthenticated(false))
   }, [])
 
-  // Fetch media when filters change
   useEffect(() => {
     if (!authenticated) return
     reset()
@@ -2824,21 +2473,15 @@ function App() {
     fetchMedia({ groups: activeGroupIds, type: mediaTypeFilter ?? undefined })
   }
 
-  // Lightbox navigation
   const selectedIndex = selectedItem ? items.findIndex((i) => i.id === selectedItem.id) : -1
+  const handlePrev = () => { if (selectedIndex > 0) setSelectedItem(items[selectedIndex - 1]) }
+  const handleNext = () => { if (selectedIndex < items.length - 1) setSelectedItem(items[selectedIndex + 1]) }
 
-  const handlePrev = () => {
-    if (selectedIndex > 0) setSelectedItem(items[selectedIndex - 1])
-  }
-  const handleNext = () => {
-    if (selectedIndex < items.length - 1) setSelectedItem(items[selectedIndex + 1])
-  }
-
-  if (authenticated === null) return null // loading
+  if (authenticated === null) return null
   if (!authenticated) return <AuthFlow onAuthenticated={() => setAuthenticated(true)} />
 
   return (
-    <div className="app-layout">
+    <div className="flex h-screen">
       <Sidebar
         groups={groups}
         onToggleGroup={toggleActive}
@@ -2867,22 +2510,20 @@ function App() {
     </div>
   )
 }
-
-export default App
 ```
 
-- [ ] **Step 3: Verify frontend builds**
+- [ ] **Step 2: Verify frontend builds**
 
 ```bash
-cd frontend && npm run build
+cd frontend && bun run build
 # Expected: successful build
 ```
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
-git add frontend/src/App.tsx frontend/src/App.css
-git commit -m "feat: wire up App with auth, sidebar, grid, and lightbox"
+git add frontend/src/routes/index.tsx
+git commit -m "feat: wire up index route with auth, sidebar, grid, and lightbox"
 ```
 
 ---
@@ -2902,19 +2543,18 @@ cp .env.example .env
 - [ ] **Step 2: Start backend**
 
 ```bash
-cd backend && source .venv/bin/activate
-uvicorn main:app --reload --port 8000
+cd backend && uv run uvicorn main:app --reload --port 8000
 ```
 
 - [ ] **Step 3: Start frontend (separate terminal)**
 
 ```bash
-cd frontend && npm run dev
+cd frontend && bun run dev
 ```
 
 - [ ] **Step 4: Manual smoke test**
 
-Open http://localhost:5173 in browser:
+Open http://localhost:3000 in browser:
 1. Auth flow should appear — enter phone, code, optional 2FA
 2. After auth, sidebar should show your groups/channels
 3. Check some groups, click "Sync Active Groups"
@@ -2928,20 +2568,4 @@ Open http://localhost:5173 in browser:
 ```bash
 git add -A
 git commit -m "fix: smoke test fixes"
-```
-
-### Task 16: Remove Vite Boilerplate
-
-- [ ] **Step 1: Clean up unused Vite scaffold files**
-
-Delete these if they still exist:
-- `frontend/src/assets/react.svg`
-- `frontend/public/vite.svg`
-- Any remaining default Vite content in `index.html`
-
-- [ ] **Step 2: Commit**
-
-```bash
-git add -A
-git commit -m "chore: remove Vite scaffold boilerplate"
 ```
