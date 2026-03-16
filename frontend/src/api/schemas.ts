@@ -65,6 +65,14 @@ export const FaceScanStatus = z.object({
   person_count: z.number(),
 })
 
+export const ZipJobResponse = z.object({ job_id: z.string() })
+export const ZipStatusResponse = z.object({
+  status: z.enum(['preparing', 'zipping', 'done', 'error']),
+  files_ready: z.number(),
+  files_total: z.number(),
+  error: z.string().nullable(),
+})
+
 // --- Inferred types (exported for consumers) ---
 export type AuthStatus = z.infer<typeof AuthStatus>
 export type Group = z.infer<typeof Group>
@@ -73,3 +81,5 @@ export type MediaPage = z.infer<typeof MediaPage>
 export type SyncStatus = z.infer<typeof SyncStatus>
 export type Person = z.infer<typeof Person>
 export type FaceScanStatus = z.infer<typeof FaceScanStatus>
+export type ZipJobResponse = z.infer<typeof ZipJobResponse>
+export type ZipStatusResponse = z.infer<typeof ZipStatusResponse>

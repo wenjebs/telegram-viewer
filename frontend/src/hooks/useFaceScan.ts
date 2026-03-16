@@ -20,6 +20,7 @@ export function useFaceScan({
   const { data: status } = useQuery({
     queryKey: ['faceScanStatus'],
     queryFn: getFaceScanStatus,
+    refetchOnMount: 'always',
     refetchInterval: (query) => {
       const data = query.state.data
       if (!data) return 2000

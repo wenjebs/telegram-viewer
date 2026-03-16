@@ -25,3 +25,7 @@ def get_sync_status(request: Request) -> dict[int, dict]:
 
 def get_background_tasks(request: Request) -> set[asyncio.Task]:
     return request.app.state.background_tasks
+
+
+def get_zip_jobs(request: Request) -> dict[str, dict]:
+    return request.app.state.zip_jobs

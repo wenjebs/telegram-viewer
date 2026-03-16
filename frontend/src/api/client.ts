@@ -8,6 +8,8 @@ import {
   Person,
   SuccessResponse,
   SyncStatus,
+  ZipJobResponse,
+  ZipStatusResponse,
 } from './schemas'
 
 const BASE = '/api'
@@ -232,7 +234,7 @@ export const getFavoritesMedia = (params: {
 export const getFavoritesCount = () =>
   fetchJSON('/media/favorites/count', CountResponse)
 
-// Download
+// Download (legacy sync endpoint kept for compatibility)
 export async function downloadZip(mediaIds: number[]): Promise<Blob> {
   const resp = await fetch(`${BASE}/media/download-zip`, {
     method: 'POST',
@@ -242,6 +244,20 @@ export async function downloadZip(mediaIds: number[]): Promise<Blob> {
   await ensureOk(resp)
   return resp.blob()
 }
+
+// Async zip with progress
+export const prepareZip = (mediaIds: number[]) =>
+  fetchJSON('/media/prepare-zip', ZipJobResponse, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ media_ids: mediaIds }),
+  })
+
+export const getZipStatus = (jobId: string) =>
+  fetchJSON(`/media/zip-status/${jobId}`, ZipStatusResponse)
+
+export const getZipDownloadUrl = (jobId: string) =>
+  `${BASE}/media/zip-download/${jobId}`
 
 // Faces
 export const getFaceScanStatus = () =>

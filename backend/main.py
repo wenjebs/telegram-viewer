@@ -29,6 +29,7 @@ async def lifespan(app: FastAPI):
     # Shared state
     app.state.background_tasks = set()
     app.state.sync_status = {}
+    app.state.zip_jobs = {}  # dict[str, dict] — async zip job status
 
     # Init database
     db = await aiosqlite.connect(DB_PATH)

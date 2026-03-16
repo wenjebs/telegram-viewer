@@ -12,7 +12,7 @@ import appCss from '#/styles.css?url'
 
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: { staleTime: Infinity, refetchOnWindowFocus: false },
+    queries: { staleTime: 5 * 60 * 1000, refetchOnWindowFocus: true },
   },
 })
 

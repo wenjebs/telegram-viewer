@@ -163,7 +163,7 @@ async def _run_sync(
     try:
         async for event in index_chat(tg, db, chat_id, chat_name):
             sync_status[chat_id] = {
-                "status": event.type if event.type != "done" else "done",
+                "status": "done" if event.type == "done" else "syncing",
                 "progress": event.progress,
                 "total": event.total,
             }
@@ -229,16 +229,9 @@ async def clear_media(
     chat_id: int,
     db: aiosqlite.Connection = Depends(get_db),
 ):
-    # Collect thumbnail paths before deleting DB rows
-    cursor = await db.execute(
-        "SELECT thumbnail_path FROM media_items WHERE chat_id = ? AND thumbnail_path IS NOT NULL",
-        (chat_id,),
-    )
-    rows = await cursor.fetchall()
-    await clear_chat_media(db, chat_id)
-    # Remove cached thumbnail files
-    for row in rows:
-        await asyncio.to_thread(Path(row[0]).unlink, missing_ok=True)
+    paths = await clear_chat_media(db, chat_id)
+    for p in paths:
+        await asyncio.to_thread(Path(p).unlink, missing_ok=True)
     return {"success": True}
 
 
