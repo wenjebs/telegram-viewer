@@ -108,7 +108,6 @@ async def download_media(media_id: int):
 
 async def _download_thumbnail(tg, item: dict) -> bytes | None:
     """Download the smallest photo size or document thumb."""
-    from telethon.tl.types import InputPhotoFileLocation, InputDocumentFileLocation
     from telethon.errors import FileReferenceExpiredError
 
     await tg.acquire_semaphore()

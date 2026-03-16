@@ -56,7 +56,7 @@ app.add_middleware(
 
 
 @app.exception_handler(AuthKeyError)
-async def auth_key_error_handler(request: Request, exc: AuthKeyError):
+async def auth_key_error_handler(_request: Request, _exc: AuthKeyError):
     return JSONResponse(status_code=401, content={"detail": "Session invalid or revoked"})
 
 
