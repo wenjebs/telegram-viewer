@@ -390,16 +390,21 @@ function Home() {
           <>
             {viewMode === 'people' && selectedPerson && (
               <PersonDetail
+                key={selectedPerson.id}
                 person={selectedPerson}
                 onBack={() => setSelectedPerson(null)}
                 onRename={async (name) => {
-                  await renamePerson(selectedPerson.id, name)
-                  setSelectedPerson({
-                    ...selectedPerson,
-                    name,
-                    display_name: name,
-                  })
-                  persons.invalidate()
+                  try {
+                    await renamePerson(selectedPerson.id, name)
+                    setSelectedPerson({
+                      ...selectedPerson,
+                      name,
+                      display_name: name,
+                    })
+                    persons.invalidate()
+                  } catch {
+                    toast.error('Failed to rename person')
+                  }
                 }}
                 onMerge={() => setShowMergeModal(true)}
               />
@@ -471,12 +476,16 @@ function Home() {
           persons={persons.persons}
           currentPersonId={selectedPerson.id}
           onMerge={async (mergeId) => {
-            await mergePersons(selectedPerson.id, mergeId)
-            setShowMergeModal(false)
-            persons.invalidate()
-            queryClient.invalidateQueries({
-              queryKey: ['faces', 'persons', selectedPerson.id, 'media'],
-            })
+            try {
+              await mergePersons(selectedPerson.id, mergeId)
+              setShowMergeModal(false)
+              persons.invalidate()
+              queryClient.invalidateQueries({
+                queryKey: ['faces', 'persons', selectedPerson.id, 'media'],
+              })
+            } catch {
+              toast.error('Failed to merge persons')
+            }
           }}
           onClose={() => setShowMergeModal(false)}
         />

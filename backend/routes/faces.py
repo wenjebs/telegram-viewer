@@ -93,11 +93,8 @@ async def _run_scan(
     tg: TelegramClientWrapper,
     force: bool,
 ) -> None:
-    try:
-        await scan_faces(db, tg, force_rescan=force)
-    except Exception:
-        logger.exception("Face scan failed")
-        await update_face_scan_state(db, status="error", last_error="Scan failed")
+    # Error handling is inside scan_faces (sets status="error" on failure)
+    await scan_faces(db, tg, force_rescan=force)
 
 
 # endregion

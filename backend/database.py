@@ -306,26 +306,85 @@ async def update_file_ref(
 
 
 # region Clear media
-async def clear_chat_media(db: aiosqlite.Connection, chat_id: int) -> None:
-    """Delete all media items and reset sync state for a chat."""
+async def clear_chat_media(db: aiosqlite.Connection, chat_id: int) -> list[str]:
+    """Delete all media items, faces, persons, and reset sync/scan state for a chat.
+
+    Returns cached file paths (thumbnails, downloads, face crops) for cleanup.
+    """
+    # Collect file paths for cleanup
+    cursor = await db.execute(
+        "SELECT thumbnail_path, download_path FROM media_items "
+        "WHERE chat_id = ? AND (thumbnail_path IS NOT NULL OR download_path IS NOT NULL)",
+        (chat_id,),
+    )
+    rows = await cursor.fetchall()
+    paths = [p for row in rows for p in (row[0], row[1]) if p]
+
+    cursor = await db.execute(
+        "SELECT crop_path FROM faces WHERE media_id IN "
+        "(SELECT id FROM media_items WHERE chat_id = ?) AND crop_path IS NOT NULL",
+        (chat_id,),
+    )
+    paths += [row[0] for row in await cursor.fetchall()]
+
+    # Delete orphaned persons (all their faces belong to this chat)
+    await db.execute(
+        "DELETE FROM persons WHERE id IN ("
+        "  SELECT person_id FROM faces WHERE person_id IS NOT NULL "
+        "  AND media_id IN (SELECT id FROM media_items WHERE chat_id = ?)"
+        ") AND id NOT IN ("
+        "  SELECT DISTINCT person_id FROM faces WHERE person_id IS NOT NULL "
+        "  AND media_id NOT IN (SELECT id FROM media_items WHERE chat_id = ?)"
+        ")",
+        (chat_id, chat_id),
+    )
+    await db.execute(
+        "DELETE FROM faces WHERE media_id IN "
+        "(SELECT id FROM media_items WHERE chat_id = ?)",
+        (chat_id,),
+    )
     await db.execute("DELETE FROM media_items WHERE chat_id = ?", (chat_id,))
     await db.execute(
         "UPDATE sync_state SET last_msg_id = 0, last_synced = NULL WHERE chat_id = ?",
         (chat_id,),
     )
+    # Update face counts for remaining persons
+    await db.execute(
+        "UPDATE persons SET face_count = ("
+        "  SELECT COUNT(*) FROM faces WHERE person_id = persons.id"
+        "), updated_at = ?",
+        (datetime.now(tz=timezone.utc).isoformat(),),
+    )
     await db.commit()
+    return paths
 
 
 async def clear_all_media(db: aiosqlite.Connection) -> list[str]:
-    """Delete all media items and reset all sync states. Returns cached file paths for cleanup."""
+    """Delete all media items, faces, persons, and reset all sync/scan states.
+
+    Returns cached file paths (thumbnails, downloads, face crops) for cleanup.
+    """
     cursor = await db.execute(
         "SELECT thumbnail_path, download_path FROM media_items "
         "WHERE thumbnail_path IS NOT NULL OR download_path IS NOT NULL"
     )
     rows = await cursor.fetchall()
     paths = [p for row in rows for p in (row[0], row[1]) if p]
+
+    cursor = await db.execute(
+        "SELECT crop_path FROM faces WHERE crop_path IS NOT NULL"
+    )
+    paths += [row[0] for row in await cursor.fetchall()]
+
+    await db.execute("DELETE FROM faces")
+    await db.execute("DELETE FROM persons")
     await db.execute("DELETE FROM media_items")
     await db.execute("UPDATE sync_state SET last_msg_id = 0, last_synced = NULL")
+    await db.execute(
+        "UPDATE face_scan_state SET status = 'idle', scanned_count = 0, "
+        "total_count = 0, updated_at = ? WHERE id = 1",
+        (datetime.now(tz=timezone.utc).isoformat(),),
+    )
     await db.commit()
     return paths
 
@@ -760,7 +819,15 @@ async def get_face_scan_state(db: aiosqlite.Connection) -> dict:
     return dict(row)
 
 
+_SCAN_STATE_FIELDS = frozenset({
+    "status", "scanned_count", "total_count", "last_scanned_media_id", "last_error",
+})
+
+
 async def update_face_scan_state(db: aiosqlite.Connection, **kwargs) -> None:
+    invalid = set(kwargs.keys()) - _SCAN_STATE_FIELDS
+    if invalid:
+        raise ValueError(f"Invalid face_scan_state fields: {invalid}")
     cursor = await db.execute("SELECT id FROM face_scan_state WHERE id = 1")
     row = await cursor.fetchone()
     now = datetime.now(tz=timezone.utc).isoformat()

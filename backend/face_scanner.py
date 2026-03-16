@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import io
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
@@ -161,6 +160,10 @@ async def scan_faces(db, tg, force_rescan: bool = False) -> None:
                                 for f in detected
                             ]
                             face_ids = await insert_faces_batch(db, face_rows)
+                            assert len(face_ids) == len(detected), (
+                                f"insert_faces_batch returned {len(face_ids)} IDs "
+                                f"for {len(detected)} faces"
+                            )
 
                             # Save crops and update crop_path
                             for face_id, f in zip(face_ids, detected):
@@ -252,7 +255,7 @@ async def cluster_faces(db) -> None:
         cluster_map.setdefault(label, []).append(face_id)
 
     clusters = []
-    for _label, fids in cluster_map.items():
+    for fids in cluster_map.values():
         representative = max(fids, key=lambda fid: conf_map.get(fid, 0.0))
         clusters.append(
             {
