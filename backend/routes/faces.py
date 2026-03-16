@@ -109,7 +109,12 @@ async def _run_scan(
 async def scan_status(db: aiosqlite.Connection = Depends(get_db)):
     state = await get_face_scan_state(db)
     person_count = await get_person_count(db)
-    return {**state, "person_count": person_count}
+    return {
+        "status": state.get("status", "idle"),
+        "scanned": state.get("scanned_count", 0),
+        "total": state.get("total_count", 0),
+        "person_count": person_count,
+    }
 
 
 @router.post("/scan")
