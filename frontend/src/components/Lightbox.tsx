@@ -34,15 +34,31 @@ export default function Lightbox({
   // #region Keyboard shortcuts
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-      if (e.key === 'ArrowLeft' && hasPrev) onPrev()
-      if (e.key === 'ArrowRight' && hasNext) onNext()
-      if (e.key === 's' || e.key === 'S') onToggleSelect?.()
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        onClose()
+      }
+      if (e.key === 'ArrowLeft' && hasPrev) {
+        e.stopPropagation()
+        onPrev()
+      }
+      if (e.key === 'ArrowRight' && hasNext) {
+        e.stopPropagation()
+        onNext()
+      }
+      if (e.key === 's' || e.key === 'S') {
+        e.stopPropagation()
+        onToggleSelect?.()
+      }
       if (e.key === 'h' || e.key === 'H') {
+        e.stopPropagation()
         onHide?.()
         onUnhide?.()
       }
-      if (e.key === 'f' || e.key === 'F') onToggleFavorite?.()
+      if (e.key === 'f' || e.key === 'F') {
+        e.stopPropagation()
+        onToggleFavorite?.()
+      }
     },
     [
       onClose,
@@ -140,7 +156,38 @@ export default function Lightbox({
           />
         )}
 
-        <div className="mt-3 flex items-center justify-center gap-3">
+        {/* Media info */}
+        <div className="mt-3 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-neutral-400">
+          <span className="rounded bg-neutral-800 px-1.5 py-0.5 uppercase">
+            {item.media_type}
+          </span>
+          {item.mime_type && <span>{item.mime_type}</span>}
+          {item.sender_name && (
+            <span>
+              from <span className="text-neutral-200">{item.sender_name}</span>
+            </span>
+          )}
+          <span>
+            in <span className="text-neutral-200">{item.chat_name}</span>
+          </span>
+          <span>
+            {new Date(item.date).toLocaleDateString(undefined, {
+              year: 'numeric',
+              month: 'short',
+              day: 'numeric',
+            })}
+          </span>
+          {item.file_size != null && (
+            <span>{formatFileSize(item.file_size)}</span>
+          )}
+          {item.width != null && item.height != null && (
+            <span>
+              {item.width}&times;{item.height}
+            </span>
+          )}
+        </div>
+
+        <div className="mt-2 flex items-center justify-center gap-3">
           <button
             className="rounded-md border border-neutral-600 px-6 py-2 text-sm text-white hover:bg-neutral-800"
             onClick={handleDownload}
@@ -199,4 +246,10 @@ export default function Lightbox({
       </div>
     </div>
   )
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }

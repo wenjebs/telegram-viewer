@@ -83,6 +83,10 @@ export function useSelectMode() {
     })
   }, [])
 
+  const setSelection = useCallback((ids: Set<number>) => {
+    setSelectedIds(ids)
+  }, [])
+
   const deselectAll = useCallback(() => {
     setSelectedIds(new Set())
     lastClickedIdRef.current = null
@@ -100,6 +104,7 @@ export function useSelectMode() {
     selectedCount: selectedIds.size,
     enterSelectMode,
     exitSelectMode,
+    setSelection,
     toggle,
     toggleRange,
     selectAll,

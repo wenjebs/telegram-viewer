@@ -2,12 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import {
   getAuthStatus,
-  startSyncAll,
-  getSyncStatus,
   clearAllMedia,
-  hideMedia,
-  unhideMedia,
-  toggleFavorite,
   getHiddenCount,
   getFavoritesCount,
   hideDialog,
@@ -16,7 +11,7 @@ import {
   getHiddenDialogCount,
 } from '#/api/client'
 import type { DateRange } from 'react-day-picker'
-import type { Group, MediaItem, SyncStatus } from '#/api/types'
+import type { Group, MediaItem } from '#/api/types'
 import AuthFlow from '#/components/AuthFlow'
 import Sidebar from '#/components/Sidebar'
 import MediaGrid from '#/components/MediaGrid'
@@ -27,6 +22,9 @@ import { useMedia } from '#/hooks/useMedia'
 import { useHiddenMedia } from '#/hooks/useHiddenMedia'
 import { useFavoritesMedia } from '#/hooks/useFavoritesMedia'
 import { useSelectMode } from '#/hooks/useSelectMode'
+import { useDragSelect } from '#/hooks/useDragSelect'
+import { useSyncPolling } from '#/hooks/useSyncPolling'
+import { useLightbox } from '#/hooks/useLightbox'
 
 export const Route = createFileRoute('/')({ component: Home })
 
@@ -41,19 +39,13 @@ function Home() {
   const [mediaTypeFilter, setMediaTypeFilter] = useState<string | null>(null)
   const [chatTypeFilter, setChatTypeFilter] = useState<string | null>(null)
   const [dateRange, setDateRange] = useState<DateRange | undefined>()
-  const [selectedItem, setSelectedItem] = useState<MediaItem | null>(null)
   const [sidebarWidth, setSidebarWidth] = useState(280)
-  const [syncing, setSyncing] = useState(false)
-  const [syncStatuses, setSyncStatuses] = useState<Record<number, SyncStatus>>(
-    {},
-  )
   const [viewMode, setViewMode] = useState<ViewMode>('normal')
   const [hiddenCount, setHiddenCount] = useState(0)
   const [favoritesCount, setFavoritesCount] = useState(0)
   const [showHiddenDialogs, setShowHiddenDialogs] = useState(false)
   const [hiddenDialogs, setHiddenDialogs] = useState<Group[]>([])
   const [hiddenDialogCount, setHiddenDialogCount] = useState(0)
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   // #endregion
 
   // #region Hooks
@@ -67,6 +59,14 @@ function Home() {
   const hidden = useHiddenMedia()
   const favorites = useFavoritesMedia()
   const selectMode = useSelectMode()
+  const gridContainerRef = useRef<HTMLDivElement>(null)
+  const dragSelect = useDragSelect({
+    containerRef: gridContainerRef,
+    selectMode: selectMode.active,
+    enterSelectMode: selectMode.enterSelectMode,
+    setSelection: selectMode.setSelection,
+    selectedIds: selectMode.selectedIds,
+  })
   // #endregion
 
   // #region Derived state
@@ -76,7 +76,6 @@ function Home() {
       : viewMode === 'favorites'
         ? favorites
         : media
-  // Sort by date DESC to match the grid's visual order
   const activeItems = useMemo(
     () =>
       [...activeSource.items].toSorted((a, b) => b.date.localeCompare(a.date)),
@@ -97,7 +96,7 @@ function Home() {
   )
   // #endregion
 
-  // #region Refs for setInterval access
+  // #region Refs for interval/callback access
   const activeGroupIdsRef = useRef(activeGroupIds)
   activeGroupIdsRef.current = activeGroupIds
   const mediaTypeFilterRef = useRef(mediaTypeFilter)
@@ -108,23 +107,7 @@ function Home() {
   dateToRef.current = dateTo
   // #endregion
 
-  // #region Effects
-  const stopPolling = useCallback(() => {
-    if (pollRef.current) {
-      clearInterval(pollRef.current)
-      pollRef.current = null
-    }
-  }, [])
-
-  useEffect(() => stopPolling, [stopPolling])
-
-  useEffect(() => {
-    getAuthStatus()
-      .then((s) => setAuthenticated(s.authenticated))
-      .catch(() => setAuthenticated(false))
-  }, [])
-
-  // Fetch counts
+  // #region Counts
   const refreshCounts = useCallback(() => {
     getHiddenCount()
       .then((r) => setHiddenCount(r.count))
@@ -135,6 +118,49 @@ function Home() {
     getHiddenDialogCount()
       .then((r) => setHiddenDialogCount(r.count))
       .catch(() => {})
+  }, [])
+  // #endregion
+
+  // #region Sync polling
+  const onSyncComplete = useCallback(
+    (params: {
+      groups: number[]
+      type?: string
+      dateFrom?: string
+      dateTo?: string
+    }) => {
+      media.reset()
+      media.fetchMedia({ ...params, reset: true })
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  )
+
+  const { syncing, syncStatuses, handleSync } = useSyncPolling({
+    activeGroupIdsRef,
+    mediaTypeFilterRef,
+    dateFromRef,
+    dateToRef,
+    onSyncComplete,
+  })
+  // #endregion
+
+  // #region Lightbox
+  const lightbox = useLightbox({
+    activeItems,
+    media,
+    hidden,
+    selectMode,
+    refreshCounts,
+    viewMode,
+  })
+  // #endregion
+
+  // #region Effects
+  useEffect(() => {
+    getAuthStatus()
+      .then((s) => setAuthenticated(s.authenticated))
+      .catch(() => setAuthenticated(false))
   }, [])
 
   useEffect(() => {
@@ -162,7 +188,6 @@ function Home() {
     media.fetchMedia,
   ])
 
-  // Fetch special views when switching
   useEffect(() => {
     if (viewMode === 'hidden' && authenticated) {
       hidden.reset()
@@ -182,72 +207,28 @@ function Home() {
     favorites.fetchFavorites,
   ])
 
-  // Escape key handler — use refs to avoid re-attaching on every render
+  // Escape key — use refs to avoid re-attaching on every render
   const selectModeRef = useRef(selectMode)
   selectModeRef.current = selectMode
-  const selectedItemRef = useRef(selectedItem)
-  selectedItemRef.current = selectedItem
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (
         e.key === 'Escape' &&
         selectModeRef.current.active &&
-        !selectedItemRef.current
+        !lightbox.selectedItem &&
+        !lightbox.justClosedLightboxRef.current
       ) {
         selectModeRef.current.exitSelectMode()
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lightbox.selectedItem])
   // #endregion
 
-  // #region Sync handlers
-  const handleSync = async () => {
-    if (activeGroupIds.length === 0) return
-    setSyncing(true)
-    try {
-      await startSyncAll(activeGroupIds)
-    } catch {
-      setSyncing(false)
-      return
-    }
-
-    stopPolling()
-    pollRef.current = setInterval(async () => {
-      const currentIds = activeGroupIdsRef.current
-      const statuses: Record<number, SyncStatus> = {}
-      await Promise.all(
-        currentIds.map(async (gid) => {
-          try {
-            statuses[gid] = await getSyncStatus(gid)
-          } catch {
-            statuses[gid] = { status: 'error', progress: 0, total: 0 }
-          }
-        }),
-      )
-      setSyncStatuses(statuses)
-
-      const allDone = currentIds.every(
-        (gid) =>
-          statuses[gid]?.status === 'done' || statuses[gid]?.status === 'error',
-      )
-      if (allDone) {
-        stopPolling()
-        setSyncing(false)
-        media.reset()
-        media.fetchMedia({
-          groups: activeGroupIdsRef.current,
-          type: mediaTypeFilterRef.current ?? undefined,
-          dateFrom: dateFromRef.current,
-          dateTo: dateToRef.current,
-          reset: true,
-        })
-      }
-    }, 2000)
-  }
-
+  // #region Handlers
   const handleClear = async () => {
     try {
       await clearAllMedia()
@@ -263,9 +244,7 @@ function Home() {
       /* clearAllMedia failure is non-critical */
     }
   }
-  // #endregion
 
-  // #region Grid handlers
   const handleLoadMore = () => {
     if (viewMode === 'hidden') {
       hidden.fetchHidden({})
@@ -283,7 +262,7 @@ function Home() {
 
   const handleItemClick = (item: MediaItem) => {
     if (selectMode.active) return
-    setSelectedItem(item)
+    lightbox.setSelectedItem(item)
   }
 
   const handleToggle = (id: number, event: React.MouseEvent) => {
@@ -299,103 +278,10 @@ function Home() {
       selectMode.enterSelectMode(item.id)
     }
   }
-  // #endregion
-
-  // #region Lightbox handlers
-  const handleLightboxToggleSelect = useCallback(() => {
-    if (!selectedItem) return
-    if (!selectMode.active) {
-      selectMode.enterSelectMode(selectedItem.id)
-    } else {
-      selectMode.toggle(selectedItem.id)
-    }
-  }, [selectedItem, selectMode])
-
-  // Lightbox: hide current item and advance (H key)
-  const handleLightboxHide = useCallback(async () => {
-    if (!selectedItem) return
-    const currentIndex = activeItems.findIndex((i) => i.id === selectedItem.id)
-
-    try {
-      await hideMedia(selectedItem.id)
-    } catch {
-      return
-    }
-
-    media.removeItem(selectedItem.id)
-    refreshCounts()
-
-    // Advance to next, or prev, or close
-    const remaining = activeItems.filter((i) => i.id !== selectedItem.id)
-    if (remaining.length === 0) {
-      setSelectedItem(null)
-    } else if (currentIndex < remaining.length) {
-      setSelectedItem(remaining[currentIndex])
-    } else {
-      setSelectedItem(remaining[remaining.length - 1])
-    }
-  }, [selectedItem, activeItems, media, refreshCounts])
-
-  // Lightbox: unhide current item and advance (in hidden view)
-  const handleLightboxUnhide = useCallback(async () => {
-    if (!selectedItem) return
-    const currentIndex = activeItems.findIndex((i) => i.id === selectedItem.id)
-
-    try {
-      await unhideMedia(selectedItem.id)
-    } catch {
-      return
-    }
-
-    hidden.removeItems([selectedItem.id])
-    refreshCounts()
-
-    const remaining = activeItems.filter((i) => i.id !== selectedItem.id)
-    if (remaining.length === 0) {
-      setSelectedItem(null)
-    } else if (currentIndex < remaining.length) {
-      setSelectedItem(remaining[currentIndex])
-    } else {
-      setSelectedItem(remaining[remaining.length - 1])
-    }
-  }, [selectedItem, activeItems, hidden, refreshCounts])
-
-  // Lightbox: toggle favorite (F key)
-  const handleLightboxToggleFavorite = useCallback(async () => {
-    if (!selectedItem) return
-    try {
-      const result = await toggleFavorite(selectedItem.id)
-      // Update the item in place so the lightbox reflects the new state
-      setSelectedItem((prev) =>
-        prev
-          ? {
-              ...prev,
-              favorited_at: result.favorited ? new Date().toISOString() : null,
-            }
-          : null,
-      )
-      refreshCounts()
-    } catch {
-      // ignore
-    }
-  }, [selectedItem, refreshCounts])
-  // #endregion
-
-  // #region Lightbox navigation
-  const selectedIndex = selectedItem
-    ? activeItems.findIndex((i) => i.id === selectedItem.id)
-    : -1
-  const handlePrev = () => {
-    if (selectedIndex > 0) setSelectedItem(activeItems[selectedIndex - 1])
-  }
-  const handleNext = () => {
-    if (selectedIndex < activeItems.length - 1)
-      setSelectedItem(activeItems[selectedIndex + 1])
-  }
 
   const handleViewModeChange = (mode: ViewMode) => {
     selectMode.exitSelectMode()
-    setSelectedItem(null)
+    lightbox.setSelectedItem(null)
     setViewMode(mode)
   }
 
@@ -460,7 +346,7 @@ function Home() {
         onChatTypeFilter={setChatTypeFilter}
         dateRange={dateRange}
         onDateRangeChange={setDateRange}
-        onSync={handleSync}
+        onSync={() => handleSync(activeGroupIds)}
         onClear={handleClear}
         syncing={syncing}
         syncStatuses={syncStatuses}
@@ -511,22 +397,25 @@ function Home() {
           onToggle={handleToggle}
           onSelectDateGroup={selectMode.selectDateGroup}
           onLongPress={handleLongPress}
+          containerRef={gridContainerRef}
+          dragHandlers={dragSelect.handlers}
+          selectionRect={dragSelect.selectionRect}
         />
       </div>
-      {selectedItem && (
+      {lightbox.selectedItem && (
         <Lightbox
-          item={selectedItem}
-          onClose={() => setSelectedItem(null)}
-          onPrev={handlePrev}
-          onNext={handleNext}
-          hasPrev={selectedIndex > 0}
-          hasNext={selectedIndex < activeItems.length - 1}
-          selected={selectMode.isSelected(selectedItem.id)}
-          favorited={!!selectedItem.favorited_at}
-          onToggleSelect={handleLightboxToggleSelect}
-          onHide={viewMode === 'normal' ? handleLightboxHide : undefined}
-          onUnhide={viewMode === 'hidden' ? handleLightboxUnhide : undefined}
-          onToggleFavorite={handleLightboxToggleFavorite}
+          item={lightbox.selectedItem}
+          onClose={lightbox.handleClose}
+          onPrev={lightbox.handlePrev}
+          onNext={lightbox.handleNext}
+          hasPrev={lightbox.selectedIndex > 0}
+          hasNext={lightbox.selectedIndex < activeItems.length - 1}
+          selected={selectMode.isSelected(lightbox.selectedItem.id)}
+          favorited={!!lightbox.selectedItem.favorited_at}
+          onToggleSelect={lightbox.handleToggleSelect}
+          onHide={lightbox.handleHide}
+          onUnhide={lightbox.handleUnhide}
+          onToggleFavorite={lightbox.handleToggleFavorite}
         />
       )}
       {selectMode.active && (
@@ -540,6 +429,16 @@ function Home() {
           viewMode={viewMode}
           onUnhide={() => {
             hidden.removeItems([...selectMode.selectedIds])
+            selectMode.exitSelectMode()
+            refreshCounts()
+          }}
+          onHide={() => {
+            const ids = [...selectMode.selectedIds]
+            media.removeItems(ids)
+            selectMode.exitSelectMode()
+            refreshCounts()
+          }}
+          onFavorite={() => {
             selectMode.exitSelectMode()
             refreshCounts()
           }}

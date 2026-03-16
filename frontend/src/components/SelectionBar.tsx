@@ -1,5 +1,10 @@
-import { useState } from 'react'
-import { downloadZip, unhideMediaBatch } from '#/api/client'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import {
+  downloadZip,
+  unhideMediaBatch,
+  hideMediaBatch,
+  favoriteMediaBatch,
+} from '#/api/client'
 
 interface Props {
   selectedCount: number
@@ -10,6 +15,8 @@ interface Props {
   selectedIds: Set<number>
   viewMode?: 'normal' | 'hidden' | 'favorites'
   onUnhide?: () => void
+  onHide?: () => void
+  onFavorite?: () => void
 }
 
 export default function SelectionBar({
@@ -21,9 +28,13 @@ export default function SelectionBar({
   selectedIds,
   viewMode = 'normal',
   onUnhide,
+  onHide,
+  onFavorite,
 }: Props) {
   const [downloading, setDownloading] = useState(false)
   const [unhiding, setUnhiding] = useState(false)
+  const [hiding, setHiding] = useState(false)
+  const [favoriting, setFavoriting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   // #region Actions
@@ -60,6 +71,56 @@ export default function SelectionBar({
       setUnhiding(false)
     }
   }
+
+  const handleHide = async () => {
+    if (selectedCount === 0 || hiding) return
+    setHiding(true)
+    setError(null)
+    try {
+      await hideMediaBatch([...selectedIds])
+      onHide?.()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Hide failed')
+    } finally {
+      setHiding(false)
+    }
+  }
+
+  const handleFavorite = async () => {
+    if (selectedCount === 0 || favoriting) return
+    setFavoriting(true)
+    setError(null)
+    try {
+      await favoriteMediaBatch([...selectedIds])
+      onFavorite?.()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Favorite failed')
+    } finally {
+      setFavoriting(false)
+    }
+  }
+
+  // Keyboard shortcuts
+  const handleHideRef = useRef(handleHide)
+  handleHideRef.current = handleHide
+  const handleFavoriteRef = useRef(handleFavorite)
+  handleFavoriteRef.current = handleFavorite
+
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (e.key === 'h' || e.key === 'H') {
+      e.preventDefault()
+      handleHideRef.current()
+    }
+    if (e.key === 'f' || e.key === 'F') {
+      e.preventDefault()
+      handleFavoriteRef.current()
+    }
+  }, [])
+
+  useEffect(() => {
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [handleKeyDown])
   // #endregion
 
   // #region Render
@@ -94,35 +155,63 @@ export default function SelectionBar({
             {unhiding ? 'Unhiding...' : 'Unhide'}
           </button>
         ) : (
-          <button
-            className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
-            onClick={handleDownload}
-            disabled={selectedCount === 0 || downloading}
-          >
-            {downloading ? (
-              <span className="flex items-center gap-2">
-                <svg
-                  className="h-3.5 w-3.5 animate-spin"
-                  viewBox="0 0 16 16"
-                  fill="none"
-                >
-                  <circle
-                    cx="8"
-                    cy="8"
-                    r="6"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeDasharray="28"
-                    strokeDashoffset="8"
-                    strokeLinecap="round"
-                  />
-                </svg>
-                Preparing...
-              </span>
-            ) : (
-              '↓ Download'
-            )}
-          </button>
+          <>
+            <button
+              className="rounded-lg bg-red-600/80 px-4 py-1.5 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-50"
+              onClick={handleFavorite}
+              disabled={selectedCount === 0 || favoriting}
+            >
+              {favoriting ? (
+                'Saving...'
+              ) : (
+                <>
+                  ♥ Favorite <span className="text-xs text-white/40">F</span>
+                </>
+              )}
+            </button>
+            <button
+              className="rounded-lg bg-neutral-700 px-4 py-1.5 text-sm font-semibold text-white hover:bg-neutral-600 disabled:opacity-50"
+              onClick={handleHide}
+              disabled={selectedCount === 0 || hiding}
+            >
+              {hiding ? (
+                'Hiding...'
+              ) : (
+                <>
+                  Hide <span className="text-xs text-white/40">H</span>
+                </>
+              )}
+            </button>
+            <button
+              className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
+              onClick={handleDownload}
+              disabled={selectedCount === 0 || downloading}
+            >
+              {downloading ? (
+                <span className="flex items-center gap-2">
+                  <svg
+                    className="h-3.5 w-3.5 animate-spin"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                  >
+                    <circle
+                      cx="8"
+                      cy="8"
+                      r="6"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeDasharray="28"
+                      strokeDashoffset="8"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                  Preparing...
+                </span>
+              ) : (
+                '↓ Download'
+              )}
+            </button>
+          </>
         )}
         <button
           className="text-sm text-neutral-400 hover:text-neutral-200"

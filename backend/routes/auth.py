@@ -1,18 +1,26 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+
+if TYPE_CHECKING:
+    from telegram_client import TelegramClientWrapper
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 # This will be set by main.py at startup
-_tg = None
+_tg: TelegramClientWrapper | None = None
 
 
-def set_tg(tg):
+def set_tg(tg: TelegramClientWrapper) -> None:
     global _tg
     _tg = tg
 
 
-def get_tg():
+def get_tg() -> TelegramClientWrapper:
+    assert _tg is not None, "Telegram client not initialized"
     return _tg
 
 

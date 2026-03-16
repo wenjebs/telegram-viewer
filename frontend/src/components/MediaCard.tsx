@@ -87,6 +87,7 @@ export default function MediaCard({
   // #region Render
   return (
     <div
+      data-item-id={item.id}
       className={`relative aspect-square cursor-pointer overflow-hidden rounded bg-neutral-800 transition-all${
         selectMode && selected
           ? ' ring-2 ring-blue-500 ring-offset-1 ring-offset-neutral-900'
@@ -103,6 +104,7 @@ export default function MediaCard({
         src={getThumbnailUrl(item.id)}
         alt={item.caption || ''}
         loading="lazy"
+        draggable={false}
         className="h-full w-full object-cover"
       />
       {isVideo && (

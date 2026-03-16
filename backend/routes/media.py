@@ -7,6 +7,7 @@ import os
 import tempfile
 import zipfile
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
@@ -18,41 +19,64 @@ from database import (
     get_media_by_id,
     get_media_by_ids,
     hide_media_item,
+    hide_media_items,
     unhide_media_items,
     get_hidden_media_page,
     get_hidden_count,
     favorite_media_item,
+    favorite_media_items,
     unfavorite_media_item,
     get_favorites_media_page,
     get_favorites_count,
 )
 
+if TYPE_CHECKING:
+    import aiosqlite
+
+    from telegram_client import TelegramClientWrapper
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/media", tags=["media"])
 
-_db = None
-_tg = None
+_db: aiosqlite.Connection | None = None
+_tg: TelegramClientWrapper | None = None
 CACHE_DIR = Path(__file__).parent.parent / "cache"
 
 
 # region Module state
-def set_db(db):
+def set_db(db: aiosqlite.Connection) -> None:
     global _db
     _db = db
 
 
-def get_db():
+def get_db() -> aiosqlite.Connection:
+    assert _db is not None, "Database not initialized"
     return _db
 
 
-def set_tg(tg):
+def set_tg(tg: TelegramClientWrapper) -> None:
     global _tg
     _tg = tg
 
 
-def get_tg():
+def get_tg() -> TelegramClientWrapper:
+    assert _tg is not None, "Telegram client not initialized"
     return _tg
+
+
+# endregion
+
+
+# region Helpers
+def _build_media_response(items: list[dict], limit: int) -> dict:
+    """Normalize dates, strip non-serializable fields, and compute next_cursor."""
+    for item in items:
+        if " " in item["date"]:
+            item["date"] = item["date"].replace(" ", "T", 1)
+        item.pop("file_ref", None)
+    next_cursor = items[-1]["id"] if len(items) == limit else None
+    return {"items": items, "next_cursor": next_cursor}
 
 
 # endregion
@@ -79,14 +103,7 @@ async def list_media(
         date_from=date_from,
         date_to=date_to,
     )
-    for item in items:
-        # Normalize legacy space-separated dates to ISO 8601
-        if " " in item["date"]:
-            item["date"] = item["date"].replace(" ", "T", 1)
-        # Remove file_ref from list response (bytes/memoryview not JSON-serializable)
-        item.pop("file_ref", None)
-    next_cursor = items[-1]["id"] if len(items) == limit else None
-    return {"items": items, "next_cursor": next_cursor}
+    return _build_media_response(items, limit)
 
 
 class DownloadZipRequest(BaseModel):
@@ -158,8 +175,17 @@ async def download_zip(body: DownloadZipRequest):
 
 
 # region Hidden / Favorites (static routes MUST come before /{media_id})
-class UnhideBatchRequest(BaseModel):
+class BatchIdsRequest(BaseModel):
     media_ids: list[int]
+
+    @property
+    def validated_ids(self) -> list[int]:
+        if not self.media_ids:
+            raise HTTPException(status_code=400, detail="No media IDs provided")
+        return self.media_ids
+
+
+UnhideBatchRequest = BatchIdsRequest
 
 
 @router.get("/hidden")
@@ -169,12 +195,7 @@ async def list_hidden_media(
 ):
     db = get_db()
     items = await get_hidden_media_page(db, cursor_id=cursor, limit=limit)
-    for item in items:
-        if " " in item["date"]:
-            item["date"] = item["date"].replace(" ", "T", 1)
-        item.pop("file_ref", None)
-    next_cursor = items[-1]["id"] if len(items) == limit else None
-    return {"items": items, "next_cursor": next_cursor}
+    return _build_media_response(items, limit)
 
 
 @router.get("/hidden/count")
@@ -186,10 +207,22 @@ async def hidden_media_count():
 
 @router.post("/unhide-batch")
 async def unhide_media_batch(body: UnhideBatchRequest):
-    if not body.media_ids:
-        raise HTTPException(status_code=400, detail="No media IDs provided")
     db = get_db()
-    await unhide_media_items(db, body.media_ids)
+    await unhide_media_items(db, body.validated_ids)
+    return {"success": True}
+
+
+@router.post("/hide-batch")
+async def hide_media_batch(body: BatchIdsRequest):
+    db = get_db()
+    await hide_media_items(db, body.validated_ids)
+    return {"success": True}
+
+
+@router.post("/favorite-batch")
+async def favorite_media_batch(body: BatchIdsRequest):
+    db = get_db()
+    await favorite_media_items(db, body.validated_ids)
     return {"success": True}
 
 
@@ -200,12 +233,7 @@ async def list_favorites_media(
 ):
     db = get_db()
     items = await get_favorites_media_page(db, cursor_id=cursor, limit=limit)
-    for item in items:
-        if " " in item["date"]:
-            item["date"] = item["date"].replace(" ", "T", 1)
-        item.pop("file_ref", None)
-    next_cursor = items[-1]["id"] if len(items) == limit else None
-    return {"items": items, "next_cursor": next_cursor}
+    return _build_media_response(items, limit)
 
 
 @router.get("/favorites/count")

@@ -9,6 +9,7 @@ from typing import AsyncGenerator
 import aiosqlite
 from telethon.errors import FloodWaitError
 from telethon.tl.types import (
+    InputMessagesFilterDocument,
     InputMessagesFilterPhotos,
     InputMessagesFilterVideo,
     MessageMediaDocument,
@@ -59,7 +60,12 @@ async def index_chat(
             chat_id, filter=InputMessagesFilterVideo(), limit=0
         )
     ).total
-    total = photo_total + video_total
+    doc_total = (
+        await tg.client.get_messages(
+            chat_id, filter=InputMessagesFilterDocument(), limit=0
+        )
+    ).total
+    total = photo_total + video_total + doc_total
 
     if total == 0:
         yield SyncEvent(type="done")
@@ -74,7 +80,11 @@ async def index_chat(
     max_msg_id = min_id
     batch: list[tuple[dict, object]] = []  # (item_dict, telegram_msg)
 
-    filters = [InputMessagesFilterPhotos(), InputMessagesFilterVideo()]
+    filters = [
+        InputMessagesFilterPhotos(),
+        InputMessagesFilterVideo(),
+        InputMessagesFilterDocument(),
+    ]
 
     for filt in filters:
         current_min_id = min_id
@@ -128,6 +138,19 @@ async def index_chat(
     yield SyncEvent(type="done", progress=progress, total=total)
 
 
+def _sender_name(msg) -> str | None:
+    """Extract sender display name from a Telegram message."""
+    sender = msg.sender
+    if sender is None:
+        return msg.post_author
+    if hasattr(sender, "first_name"):
+        parts = [sender.first_name or "", sender.last_name or ""]
+        return " ".join(p for p in parts if p) or None
+    if hasattr(sender, "title"):
+        return sender.title
+    return msg.post_author
+
+
 def _extract_media(msg, chat_id: int, chat_name: str) -> dict | None:
     """Extract media metadata from a Telegram message."""
     if isinstance(msg.media, MessageMediaPhoto) and msg.photo:
@@ -153,6 +176,7 @@ def _extract_media(msg, chat_id: int, chat_name: str) -> dict | None:
             "access_hash": msg.photo.access_hash,
             "file_ref": msg.photo.file_reference,
             "thumbnail_path": None,
+            "sender_name": _sender_name(msg),
         }
 
     if isinstance(msg.media, MessageMediaDocument) and msg.document:
@@ -181,6 +205,7 @@ def _extract_media(msg, chat_id: int, chat_name: str) -> dict | None:
             "access_hash": msg.document.access_hash,
             "file_ref": msg.document.file_reference,
             "thumbnail_path": None,
+            "sender_name": _sender_name(msg),
         }
 
     return None

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
@@ -23,30 +24,37 @@ from database import (
 from indexer import index_chat
 from utils import fire_and_forget
 
+if TYPE_CHECKING:
+    import aiosqlite
+
+    from telegram_client import TelegramClientWrapper
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/groups", tags=["groups"])
 
-_tg = None
-_db = None
+_tg: TelegramClientWrapper | None = None
+_db: aiosqlite.Connection | None = None
 _sync_status: dict[int, dict] = {}  # chat_id -> {status, progress, total}
 
 
-def set_tg(tg):
+def set_tg(tg: TelegramClientWrapper) -> None:
     global _tg
     _tg = tg
 
 
-def get_tg():
+def get_tg() -> TelegramClientWrapper:
+    assert _tg is not None, "Telegram client not initialized"
     return _tg
 
 
-def set_db(db):
+def set_db(db: aiosqlite.Connection) -> None:
     global _db
     _db = db
 
 
-def get_db():
+def get_db() -> aiosqlite.Connection:
+    assert _db is not None, "Database not initialized"
     return _db
 
 

@@ -26,6 +26,7 @@ export interface MediaItem {
   duration: number | null
   caption: string | null
   thumbnail_path: string | null
+  sender_name: string | null
   hidden_at: string | null
   favorited_at: string | null
 }

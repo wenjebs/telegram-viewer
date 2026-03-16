@@ -95,6 +95,22 @@ export const getHiddenDialogs = () => fetchJSON<Group[]>('/groups/hidden')
 export const getHiddenDialogCount = () =>
   fetchJSON<{ count: number }>('/groups/hidden/count')
 
+// Helpers
+function buildSearchParams(
+  params: Record<string, string | number | number[] | undefined | null>,
+): URLSearchParams {
+  const sp = new URLSearchParams()
+  for (const [k, v] of Object.entries(params)) {
+    if (v == null) continue
+    if (Array.isArray(v)) {
+      if (v.length) sp.set(k, v.join(','))
+    } else {
+      sp.set(k, String(v))
+    }
+  }
+  return sp
+}
+
 // Media
 export const getMedia = (params: {
   cursor?: number
@@ -104,14 +120,15 @@ export const getMedia = (params: {
   dateFrom?: string
   dateTo?: string
 }) => {
-  const searchParams = new URLSearchParams()
-  if (params.cursor != null) searchParams.set('cursor', String(params.cursor))
-  if (params.limit != null) searchParams.set('limit', String(params.limit))
-  if (params.groups?.length) searchParams.set('groups', params.groups.join(','))
-  if (params.type) searchParams.set('type', params.type)
-  if (params.dateFrom) searchParams.set('date_from', params.dateFrom)
-  if (params.dateTo) searchParams.set('date_to', params.dateTo)
-  return fetchJSON<MediaPage>(`/media?${searchParams}`)
+  const sp = buildSearchParams({
+    cursor: params.cursor,
+    limit: params.limit,
+    groups: params.groups,
+    type: params.type,
+    date_from: params.dateFrom,
+    date_to: params.dateTo,
+  })
+  return fetchJSON<MediaPage>(`/media?${sp}`)
 }
 
 export const getThumbnailUrl = (mediaId: number) =>
@@ -138,11 +155,26 @@ export const unhideMediaBatch = (mediaIds: number[]) =>
     body: JSON.stringify({ media_ids: mediaIds }),
   })
 
+export const hideMediaBatch = (mediaIds: number[]) =>
+  fetchJSON<{ success: boolean }>('/media/hide-batch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ media_ids: mediaIds }),
+  })
+
+export const favoriteMediaBatch = (mediaIds: number[]) =>
+  fetchJSON<{ success: boolean }>('/media/favorite-batch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ media_ids: mediaIds }),
+  })
+
 export const getHiddenMedia = (params: { cursor?: number; limit?: number }) => {
-  const searchParams = new URLSearchParams()
-  if (params.cursor != null) searchParams.set('cursor', String(params.cursor))
-  if (params.limit != null) searchParams.set('limit', String(params.limit))
-  return fetchJSON<MediaPage>(`/media/hidden?${searchParams}`)
+  const sp = buildSearchParams({
+    cursor: params.cursor,
+    limit: params.limit,
+  })
+  return fetchJSON<MediaPage>(`/media/hidden?${sp}`)
 }
 
 export const getHiddenCount = () =>
@@ -159,10 +191,11 @@ export const getFavoritesMedia = (params: {
   cursor?: number
   limit?: number
 }) => {
-  const searchParams = new URLSearchParams()
-  if (params.cursor != null) searchParams.set('cursor', String(params.cursor))
-  if (params.limit != null) searchParams.set('limit', String(params.limit))
-  return fetchJSON<MediaPage>(`/media/favorites?${searchParams}`)
+  const sp = buildSearchParams({
+    cursor: params.cursor,
+    limit: params.limit,
+  })
+  return fetchJSON<MediaPage>(`/media/favorites?${sp}`)
 }
 
 export const getFavoritesCount = () =>

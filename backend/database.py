@@ -60,6 +60,7 @@ async def init_db(db: aiosqlite.Connection) -> None:
         "ALTER TABLE media_items ADD COLUMN hidden_at DATETIME",
         "ALTER TABLE media_items ADD COLUMN favorited_at DATETIME",
         "ALTER TABLE dialogs ADD COLUMN hidden_at DATETIME",
+        "ALTER TABLE media_items ADD COLUMN sender_name TEXT",
     ]:
         try:
             await db.execute(migration)
@@ -77,10 +78,10 @@ async def insert_media_item(db: aiosqlite.Connection, item: dict) -> None:
         """INSERT OR IGNORE INTO media_items
         (message_id, chat_id, chat_name, date, media_type, mime_type,
          file_size, width, height, duration, caption, file_id, access_hash,
-         file_ref, thumbnail_path)
+         file_ref, thumbnail_path, sender_name)
         VALUES (:message_id, :chat_id, :chat_name, :date, :media_type, :mime_type,
                 :file_size, :width, :height, :duration, :caption, :file_id,
-                :access_hash, :file_ref, :thumbnail_path)""",
+                :access_hash, :file_ref, :thumbnail_path, :sender_name)""",
         item,
     )
     await db.commit()
@@ -94,10 +95,10 @@ async def insert_media_batch(db: aiosqlite.Connection, items: list[dict]) -> Non
         """INSERT OR IGNORE INTO media_items
         (message_id, chat_id, chat_name, date, media_type, mime_type,
          file_size, width, height, duration, caption, file_id, access_hash,
-         file_ref, thumbnail_path)
+         file_ref, thumbnail_path, sender_name)
         VALUES (:message_id, :chat_id, :chat_name, :date, :media_type, :mime_type,
                 :file_size, :width, :height, :duration, :caption, :file_id,
-                :access_hash, :file_ref, :thumbnail_path)""",
+                :access_hash, :file_ref, :thumbnail_path, :sender_name)""",
         items,
     )
     await db.commit()
@@ -121,6 +122,28 @@ async def update_sync_progress(
     await db.commit()
 
 
+async def _paginate_media(
+    db: aiosqlite.Connection,
+    conditions: list[str],
+    params: dict,
+    cursor_id: int | None = None,
+    limit: int = 50,
+    order_by: str = "id DESC",
+) -> list[dict]:
+    """Shared cursor-based pagination for media queries."""
+    params["limit"] = limit
+    if cursor_id is not None:
+        conditions.append("id < :cursor_id")
+        params["cursor_id"] = cursor_id
+
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    query = f"SELECT * FROM media_items {where} ORDER BY {order_by} LIMIT :limit"
+
+    cursor = await db.execute(query, params)
+    rows = await cursor.fetchall()
+    return [dict(row) for row in rows]
+
+
 async def get_media_page(
     db: aiosqlite.Connection,
     cursor_id: int | None = None,
@@ -134,11 +157,7 @@ async def get_media_page(
         "hidden_at IS NULL",
         "chat_id NOT IN (SELECT id FROM dialogs WHERE hidden_at IS NOT NULL)",
     ]
-    params: dict = {"limit": limit}
-
-    if cursor_id is not None:
-        conditions.append("id < :cursor_id")
-        params["cursor_id"] = cursor_id
+    params: dict = {}
 
     if group_ids:
         placeholders = ", ".join(f":gid_{i}" for i, _ in enumerate(group_ids))
@@ -161,12 +180,7 @@ async def get_media_page(
         conditions.append("date < :date_to_exclusive")
         params["date_to_exclusive"] = date_to_exclusive
 
-    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-    query = f"SELECT * FROM media_items {where} ORDER BY id DESC LIMIT :limit"
-
-    cursor = await db.execute(query, params)
-    rows = await cursor.fetchall()
-    return [dict(row) for row in rows]
+    return await _paginate_media(db, conditions, params, cursor_id, limit)
 
 
 # endregion
@@ -283,6 +297,30 @@ async def hide_media_item(db: aiosqlite.Connection, media_id: int) -> None:
     await db.commit()
 
 
+async def hide_media_items(db: aiosqlite.Connection, media_ids: list[int]) -> None:
+    if not media_ids:
+        return
+    placeholders = ", ".join("?" for _ in media_ids)
+    now = datetime.now(timezone.utc).isoformat()
+    await db.execute(
+        f"UPDATE media_items SET hidden_at = ? WHERE id IN ({placeholders})",
+        [now, *media_ids],
+    )
+    await db.commit()
+
+
+async def favorite_media_items(db: aiosqlite.Connection, media_ids: list[int]) -> None:
+    if not media_ids:
+        return
+    placeholders = ", ".join("?" for _ in media_ids)
+    now = datetime.now(timezone.utc).isoformat()
+    await db.execute(
+        f"UPDATE media_items SET favorited_at = ? WHERE id IN ({placeholders})",
+        [now, *media_ids],
+    )
+    await db.commit()
+
+
 async def unhide_media_items(db: aiosqlite.Connection, media_ids: list[int]) -> None:
     if not media_ids:
         return
@@ -299,19 +337,14 @@ async def get_hidden_media_page(
     cursor_id: int | None = None,
     limit: int = 50,
 ) -> list[dict]:
-    conditions = ["hidden_at IS NOT NULL"]
-    params: dict = {"limit": limit}
-
-    if cursor_id is not None:
-        conditions.append("id < :cursor_id")
-        params["cursor_id"] = cursor_id
-
-    where = f"WHERE {' AND '.join(conditions)}"
-    query = f"SELECT * FROM media_items {where} ORDER BY hidden_at DESC, id DESC LIMIT :limit"
-
-    cursor = await db.execute(query, params)
-    rows = await cursor.fetchall()
-    return [dict(row) for row in rows]
+    return await _paginate_media(
+        db,
+        ["hidden_at IS NOT NULL"],
+        {},
+        cursor_id,
+        limit,
+        order_by="hidden_at DESC, id DESC",
+    )
 
 
 async def get_hidden_count(db: aiosqlite.Connection) -> int:
@@ -386,19 +419,14 @@ async def get_favorites_media_page(
     cursor_id: int | None = None,
     limit: int = 50,
 ) -> list[dict]:
-    conditions = ["favorited_at IS NOT NULL"]
-    params: dict = {"limit": limit}
-
-    if cursor_id is not None:
-        conditions.append("id < :cursor_id")
-        params["cursor_id"] = cursor_id
-
-    where = f"WHERE {' AND '.join(conditions)}"
-    query = f"SELECT * FROM media_items {where} ORDER BY favorited_at DESC, id DESC LIMIT :limit"
-
-    cursor = await db.execute(query, params)
-    rows = await cursor.fetchall()
-    return [dict(row) for row in rows]
+    return await _paginate_media(
+        db,
+        ["favorited_at IS NOT NULL"],
+        {},
+        cursor_id,
+        limit,
+        order_by="favorited_at DESC, id DESC",
+    )
 
 
 async def get_favorites_count(db: aiosqlite.Connection) -> int:

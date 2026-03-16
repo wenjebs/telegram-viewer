@@ -3,6 +3,13 @@ import type { MediaItem, SyncStatus } from '#/api/types'
 import MediaCard from './MediaCard'
 import DateHeader from './DateHeader'
 
+interface Rect {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
 interface Props {
   items: MediaItem[]
   hasMore: boolean
@@ -16,6 +23,14 @@ interface Props {
   onToggle?: (id: number, event: React.MouseEvent) => void
   onSelectDateGroup?: (items: MediaItem[]) => void
   onLongPress?: (item: MediaItem) => void
+  containerRef?: React.RefObject<HTMLDivElement | null>
+  dragHandlers?: {
+    onPointerDown: (e: React.PointerEvent) => void
+    onPointerMove: (e: React.PointerEvent) => void
+    onPointerUp: (e: React.PointerEvent) => void
+    onPointerCancel: (e: React.PointerEvent) => void
+  }
+  selectionRect?: Rect | null
 }
 
 export default function MediaGrid({
@@ -31,6 +46,9 @@ export default function MediaGrid({
   onToggle,
   onSelectDateGroup,
   onLongPress,
+  containerRef,
+  dragHandlers,
+  selectionRect,
 }: Props) {
   const grouped = useMemo(() => groupByDate(items), [items])
 
@@ -78,7 +96,11 @@ export default function MediaGrid({
 
   // #region Media grid
   return (
-    <div className="flex-1 overflow-y-auto p-4">
+    <div
+      ref={containerRef}
+      className="flex-1 overflow-y-auto p-4"
+      {...dragHandlers}
+    >
       {grouped.map(([date, dateItems]) => {
         const allSelected =
           selectMode &&
@@ -154,6 +176,17 @@ export default function MediaGrid({
         >
           {loading ? 'Loading...' : 'Load more'}
         </button>
+      )}
+      {selectionRect && (
+        <div
+          className="pointer-events-none fixed z-40 border border-blue-400 bg-blue-400/15"
+          style={{
+            left: selectionRect.x,
+            top: selectionRect.y,
+            width: selectionRect.w,
+            height: selectionRect.h,
+          }}
+        />
       )}
     </div>
   )
