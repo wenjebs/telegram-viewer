@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import asyncio
 import os
 
 import aiosqlite
@@ -10,9 +11,18 @@ from telethon.errors import AuthKeyError
 
 from database import init_db
 from routes.auth import router as auth_router, set_tg
-from routes.groups import router as groups_router, set_tg as set_groups_tg, set_db as set_groups_db
-from routes.media import router as media_router, set_tg as set_media_tg, set_db as set_media_db
+from routes.groups import (
+    router as groups_router,
+    set_tg as set_groups_tg,
+    set_db as set_groups_db,
+)
+from routes.media import (
+    router as media_router,
+    set_tg as set_media_tg,
+    set_db as set_media_db,
+)
 from telegram_client import TelegramClientWrapper
+from utils import _background_tasks
 
 load_dotenv()
 
@@ -31,6 +41,7 @@ async def lifespan(app: FastAPI):
 
     # Init Telegram client
     tg = TelegramClientWrapper(api_id=api_id, api_hash=api_hash)
+    tg.set_db(db)
     await tg.connect()
     app.state.tg = tg
     set_tg(tg)
@@ -41,8 +52,14 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    await db.close()
+    # Cancel all background tasks and wait for them to finish
+    for task in _background_tasks:
+        task.cancel()
+    if _background_tasks:
+        await asyncio.gather(*_background_tasks, return_exceptions=True)
+
     await tg.disconnect()
+    await db.close()
 
 
 app = FastAPI(title="Telegram Media Viewer", lifespan=lifespan)
@@ -57,7 +74,9 @@ app.add_middleware(
 
 @app.exception_handler(AuthKeyError)
 async def auth_key_error_handler(_request: Request, _exc: AuthKeyError):
-    return JSONResponse(status_code=401, content={"detail": "Session invalid or revoked"})
+    return JSONResponse(
+        status_code=401, content={"detail": "Session invalid or revoked"}
+    )
 
 
 app.include_router(auth_router)

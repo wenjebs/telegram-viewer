@@ -15,7 +15,9 @@ def mock_tg():
 @pytest.mark.asyncio
 async def test_auth_status_not_authenticated(mock_tg):
     mock_tg.is_authenticated.return_value = False
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         resp = await client.get("/auth/status")
     assert resp.status_code == 200
     assert resp.json() == {"authenticated": False}
@@ -24,7 +26,9 @@ async def test_auth_status_not_authenticated(mock_tg):
 @pytest.mark.asyncio
 async def test_auth_status_authenticated(mock_tg):
     mock_tg.is_authenticated.return_value = True
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         resp = await client.get("/auth/status")
     assert resp.status_code == 200
     assert resp.json() == {"authenticated": True}
@@ -33,7 +37,9 @@ async def test_auth_status_authenticated(mock_tg):
 @pytest.mark.asyncio
 async def test_send_code(mock_tg):
     mock_tg.send_code.return_value = "hash123"
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         resp = await client.post("/auth/send-code", json={"phone": "+1234567890"})
     assert resp.status_code == 200
     assert resp.json() == {"phone_code_hash": "hash123"}
@@ -42,11 +48,16 @@ async def test_send_code(mock_tg):
 @pytest.mark.asyncio
 async def test_verify_code(mock_tg):
     mock_tg.verify_code = AsyncMock()
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        resp = await client.post("/auth/verify", json={
-            "phone": "+1234567890",
-            "code": "12345",
-            "phone_code_hash": "hash123",
-        })
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        resp = await client.post(
+            "/auth/verify",
+            json={
+                "phone": "+1234567890",
+                "code": "12345",
+                "phone_code_hash": "hash123",
+            },
+        )
     assert resp.status_code == 200
     assert resp.json() == {"success": True}

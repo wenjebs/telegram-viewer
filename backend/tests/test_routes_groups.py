@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
 from httpx import AsyncClient, ASGITransport
 from main import app
 
@@ -28,8 +28,12 @@ async def test_list_groups(mock_tg, mock_db):
     ]
     mock_db.return_value = None  # no sync state
 
-    with patch("routes.groups.get_sync_state", new_callable=AsyncMock, return_value=None):
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    with patch(
+        "routes.groups.get_sync_state", new_callable=AsyncMock, return_value=None
+    ):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
             resp = await client.get("/groups")
     assert resp.status_code == 200
     data = resp.json()
@@ -39,9 +43,13 @@ async def test_list_groups(mock_tg, mock_db):
 
 @pytest.mark.asyncio
 async def test_toggle_group_active(mock_tg, mock_db):
-    with patch("routes.groups.upsert_sync_state", new_callable=AsyncMock) as mock_upsert:
+    with patch("routes.groups.upsert_sync_state", new_callable=AsyncMock):
         with patch("routes.groups.get_tg") as m_tg:
             m_tg.return_value = mock_tg
-            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-                resp = await client.patch("/groups/1/active", json={"active": True, "chat_name": "Test"})
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                resp = await client.patch(
+                    "/groups/1/active", json={"active": True, "chat_name": "Test"}
+                )
     assert resp.status_code == 200

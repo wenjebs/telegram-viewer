@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import type { Group } from '#/api/types'
 import { getGroups, toggleGroupActive } from '#/api/client'
 
-export function useGroups() {
+export function useGroups(enabled = true) {
   const [groups, setGroups] = useState<Group[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -21,18 +21,20 @@ export function useGroups() {
   }, [])
 
   useEffect(() => {
-    fetchGroups()
-  }, [fetchGroups])
+    if (enabled) fetchGroups()
+  }, [enabled, fetchGroups])
 
-  const toggleActive = async (group: Group) => {
-    const newActive = !group.active
-    await toggleGroupActive(group.id, newActive, group.name)
+  const toggleActive = useCallback(async (group: Group) => {
+    await toggleGroupActive(group.id, !group.active, group.name)
     setGroups((prev) =>
-      prev.map((g) => (g.id === group.id ? { ...g, active: newActive } : g)),
+      prev.map((g) => (g.id === group.id ? { ...g, active: !g.active } : g)),
     )
-  }
+  }, [])
 
-  const activeGroupIds = groups.filter((g) => g.active).map((g) => g.id)
+  const activeGroupIds = useMemo(
+    () => groups.filter((g) => g.active).map((g) => g.id),
+    [groups],
+  )
 
   return {
     groups,

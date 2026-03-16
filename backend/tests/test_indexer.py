@@ -1,4 +1,5 @@
 import pytest
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 import aiosqlite
 from telethon.tl.types import MessageMediaPhoto, MessageMediaDocument
@@ -9,14 +10,17 @@ from indexer import index_chat
 def make_photo_message(msg_id: int, date: str):
     msg = MagicMock()
     msg.id = msg_id
-    msg.date = date
+    msg.date = datetime.fromisoformat(date).replace(tzinfo=timezone.utc)
     msg.text = "caption"
     msg.media = MagicMock(spec=MessageMediaPhoto)
     msg.photo = MagicMock()
     msg.photo.id = msg_id * 10
     msg.photo.access_hash = msg_id * 100
     msg.photo.file_reference = b"ref"
-    msg.photo.sizes = [MagicMock(type="s", w=100, h=100), MagicMock(type="m", w=320, h=320)]
+    msg.photo.sizes = [
+        MagicMock(type="s", w=100, h=100),
+        MagicMock(type="m", w=320, h=320),
+    ]
     msg.document = None
     msg.file = MagicMock()
     msg.file.mime_type = "image/jpeg"
@@ -27,7 +31,7 @@ def make_photo_message(msg_id: int, date: str):
 def make_video_message(msg_id: int, date: str):
     msg = MagicMock()
     msg.id = msg_id
-    msg.date = date
+    msg.date = datetime.fromisoformat(date).replace(tzinfo=timezone.utc)
     msg.text = ""
     msg.media = MagicMock(spec=MessageMediaDocument)
     msg.photo = None
@@ -59,9 +63,8 @@ async def test_index_chat_photos(db):
     client.acquire_semaphore = AsyncMock()
     client.release_semaphore = MagicMock()
 
-    progress = []
-    async for p, t in index_chat(client, db, chat_id=1, chat_name="Test"):
-        progress.append((p, t))
+    async for _ in index_chat(client, db, chat_id=1, chat_name="Test"):
+        pass
 
     rows = await get_media_page(db, cursor_id=None, limit=10)
     assert len(rows) == 1
@@ -97,6 +100,7 @@ async def test_index_chat_incremental(db):
 
 class AsyncIterator:
     """Helper to make a list behave as an async iterator."""
+
     def __init__(self, items):
         self._items = items
         self._total = MagicMock(return_value=len(items))

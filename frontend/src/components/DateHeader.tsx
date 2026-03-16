@@ -1,12 +1,12 @@
 export default function DateHeader({ date }: { date: string }) {
-  const formatted = new Date(date).toLocaleDateString('en-US', {
+  const formatted = new Date(date + 'T00:00:00').toLocaleDateString('en-US', {
     weekday: 'long',
     year: 'numeric',
     month: 'long',
     day: 'numeric',
   })
   return (
-    <h3 className="mt-4 border-b border-neutral-800 pb-2 text-sm text-neutral-500 first:mt-0">
+    <h3 className="pb-1 text-xs font-semibold uppercase tracking-wide text-neutral-400">
       {formatted}
     </h3>
   )

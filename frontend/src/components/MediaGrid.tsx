@@ -1,4 +1,5 @@
-import type { MediaItem } from '#/api/types'
+import { useMemo } from 'react'
+import type { MediaItem, SyncStatus } from '#/api/types'
 import MediaCard from './MediaCard'
 import DateHeader from './DateHeader'
 
@@ -8,6 +9,8 @@ interface Props {
   loading: boolean
   onLoadMore: () => void
   onItemClick: (item: MediaItem) => void
+  syncing: boolean
+  syncStatuses: Record<number, SyncStatus>
 }
 
 export default function MediaGrid({
@@ -16,12 +19,46 @@ export default function MediaGrid({
   loading,
   onLoadMore,
   onItemClick,
+  syncing,
+  syncStatuses,
 }: Props) {
-  const grouped = groupByDate(items)
+  const grouped = useMemo(() => groupByDate(items), [items])
 
   if (items.length === 0 && !loading) {
+    if (syncing) {
+      const totals = Object.values(syncStatuses).reduce(
+        (acc, s) => ({
+          progress: acc.progress + s.progress,
+          total: acc.total + s.total,
+        }),
+        { progress: 0, total: 0 },
+      )
+      const pct =
+        totals.total > 0
+          ? Math.round((totals.progress / totals.total) * 100)
+          : 0
+
+      return (
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8 text-neutral-400">
+          <span className="text-sm">
+            {totals.total > 0
+              ? `Syncing... ${totals.progress.toLocaleString()} / ${totals.total.toLocaleString()} items`
+              : 'Syncing...'}
+          </span>
+          <div className="h-2 w-64 overflow-hidden rounded-full bg-neutral-700">
+            <div
+              className={`h-full rounded-full bg-sky-600 transition-all duration-300${totals.total === 0 ? ' animate-pulse' : ''}`}
+              style={{
+                width: `${totals.total > 0 ? pct : 100}%`,
+              }}
+            />
+          </div>
+        </div>
+      )
+    }
+
     return (
-      <div className="flex flex-1 items-center justify-center text-neutral-500">
+      <div className="flex flex-1 items-center justify-center p-8 text-neutral-500">
         No media found. Select some groups and sync to get started.
       </div>
     )
@@ -30,7 +67,10 @@ export default function MediaGrid({
   return (
     <div className="flex-1 overflow-y-auto p-4">
       {grouped.map(([date, dateItems]) => (
-        <div key={date}>
+        <div
+          key={date}
+          className="mb-4 rounded-lg border border-neutral-800 bg-neutral-900/60 p-3"
+        >
           <DateHeader date={date} />
           <div className="mt-2 grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-1">
             {dateItems.map((item) => (
@@ -57,8 +97,9 @@ export default function MediaGrid({
 }
 
 function groupByDate(items: MediaItem[]): [string, MediaItem[]][] {
+  const sorted = [...items].toSorted((a, b) => b.date.localeCompare(a.date))
   const map = new Map<string, MediaItem[]>()
-  for (const item of items) {
+  for (const item of sorted) {
     const date = item.date.split('T')[0]
     const existing = map.get(date)
     if (existing) {
