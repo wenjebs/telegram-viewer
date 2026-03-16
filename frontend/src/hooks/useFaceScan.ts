@@ -20,17 +20,25 @@ export function useFaceScan({
   const { data: status } = useQuery({
     queryKey: ['faceScanStatus'],
     queryFn: getFaceScanStatus,
-    enabled: scanning,
     refetchInterval: (query) => {
       const data = query.state.data
-      if (!data) return 2000
-      return data.status === 'done' || data.status === 'error' ? false : 2000
+      if (!data) return false
+      return data.status === 'scanning' || data.status === 'clustering'
+        ? 2000
+        : false
     },
   })
 
+  // Resume polling if we detect an in-progress scan (e.g. after page refresh)
   useEffect(() => {
-    if (!scanning || !status) return
-    if (status.status === 'done' || status.status === 'error') {
+    if (!status) return
+    if (
+      (status.status === 'scanning' || status.status === 'clustering') &&
+      !scanning
+    ) {
+      setScanning(true)
+    }
+    if (scanning && (status.status === 'done' || status.status === 'error')) {
       setScanning(false)
       if (status.status === 'done') onScanComplete()
     }
