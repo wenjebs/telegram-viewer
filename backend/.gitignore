@@ -1,0 +1,25 @@
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Distribution
+dist/
+*.egg-info/
