@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import asyncio
-from fastapi import APIRouter, Request
+import json
+
+from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from database import upsert_sync_state, get_sync_state, get_all_sync_states
+from database import upsert_sync_state, get_sync_state
 from indexer import index_chat
 
 router = APIRouter(prefix="/groups", tags=["groups"])
@@ -77,7 +78,7 @@ async def sync_group(chat_id: int):
             yield f"data: {{\"status\": \"done\"}}\n\n"
         except Exception as e:
             _sync_status[chat_id] = {"status": "error", "progress": 0, "total": 0}
-            yield f"data: {{\"status\": \"error\", \"error\": \"{str(e)}\"}}\n\n"
+            yield f"data: {json.dumps({'status': 'error', 'error': str(e)})}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
@@ -43,10 +42,9 @@ async def list_media(
     db = get_db()
     group_ids = [int(g) for g in groups.split(",")] if groups else None
     items = await get_media_page(db, cursor_id=cursor, limit=limit, group_ids=group_ids, media_type=type)
-    # Convert file_ref bytes to None for JSON serialization (not needed in list response)
+    # Remove file_ref from list response (bytes/memoryview not JSON-serializable)
     for item in items:
-        if "file_ref" in item and isinstance(item["file_ref"], (bytes, bytearray)):
-            del item["file_ref"]
+        item.pop("file_ref", None)
     next_cursor = items[-1]["id"] if len(items) == limit else None
     return {"items": items, "next_cursor": next_cursor}
 
