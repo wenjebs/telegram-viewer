@@ -35,6 +35,23 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/groups", tags=["groups"])
 
 
+def _merge_sync_states(dialogs: list[dict], state_map: dict[int, dict]) -> list[dict]:
+    result = []
+    for d in dialogs:
+        entry = {
+            "id": d["id"],
+            "name": d["name"],
+            "type": d["type"],
+            "unread_count": d.get("unread_count", 0),
+            "hidden_at": d.get("hidden_at"),
+        }
+        state = state_map.get(d["id"])
+        entry["active"] = bool(state and state["active"]) if state else False
+        entry["last_synced"] = state["last_synced"] if state else None
+        result.append(entry)
+    return result
+
+
 class ToggleActiveRequest(BaseModel):
     active: bool
     chat_name: str
@@ -67,20 +84,7 @@ async def list_groups(
     # Merge sync state
     states = await get_all_sync_states(db)
     state_map = {s["chat_id"]: s for s in states}
-    result = []
-    for d in dialogs:
-        entry = {
-            "id": d["id"],
-            "name": d["name"],
-            "type": d["type"],
-            "unread_count": d.get("unread_count", 0),
-            "hidden_at": d.get("hidden_at"),
-        }
-        state = state_map.get(d["id"])
-        entry["active"] = bool(state and state["active"]) if state else False
-        entry["last_synced"] = state["last_synced"] if state else None
-        result.append(entry)
-    return result
+    return _merge_sync_states(dialogs, state_map)
 
 
 @router.post("/refresh")
@@ -95,7 +99,10 @@ async def refresh_groups(
 
 @router.get("/hidden")
 async def list_hidden_groups(db: aiosqlite.Connection = Depends(get_db)):
-    return await get_hidden_dialogs(db)
+    dialogs = await get_hidden_dialogs(db)
+    states = await get_all_sync_states(db)
+    state_map = {s["chat_id"]: s for s in states}
+    return _merge_sync_states(dialogs, state_map)
 
 
 @router.get("/hidden/count")

@@ -24,8 +24,8 @@ React 19, TanStack Start/Router (file-based routing), TanStack Query (data fetch
 - **useSelectMode** — selection state (active, selectedIds Set, lastClickedId). API: enterSelectMode, exitSelectMode, toggle, toggleRange, selectAll, selectDateGroup, deselectAll, isSelected
 - **useDragSelect** — drag rectangle multi-select with pointer capture, auto-scroll near edges, hit-test against `[data-item-id]` elements
 - **useLightbox** — lightbox navigation (prev/next), actions (hide/unhide/favorite/select), keyboard shortcuts
-- **useSyncPolling** — start sync on active groups, poll status every 2s via displayGroupIdsRef, calls `queryClient.invalidateQueries` on completion
-- **usePrefetch(items, enabled)** — aggressive background prefetch of all loaded media items (photos + videos). Uses TanStack Query `prefetchQuery` with `staleTime/gcTime: Infinity` for dedup and tracking. Concurrent queue (max 5), append-only (new pages don't abort in-flight downloads), AbortController cleanup on unmount. Warms both backend disk cache and browser HTTP cache so lightbox loads are instant.
+- **useSyncStatus** — triggers sync via `useMutation` (POST `/sync-all`), polls status with TanStack Query `refetchInterval` (2s), auto-stops when all groups reach done/error. Uses `data.started` to track only server-confirmed groups. Returns `{ syncing, syncStatuses, handleSync }`
+- **usePrefetch(items, enabled)** — background prefetch of loaded media items (photos + videos). Uses TanStack Query `prefetchQuery` with `staleTime/gcTime: Infinity` for dedup and tracking. Concurrent queue (max 3), LIFO order (newest pages prefetched first via `unshift`), new pages don't abort in-flight downloads, AbortController cleanup on unmount. Warms both backend disk cache and browser HTTP cache so lightbox loads are instant.
 
 ## API Client (`src/api/client.ts`)
 

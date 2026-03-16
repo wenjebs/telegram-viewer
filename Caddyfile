@@ -1,0 +1,7 @@
+{
+	local_certs
+}
+
+https://tele.view {
+	reverse_proxy localhost:3000
+}

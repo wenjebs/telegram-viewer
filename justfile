@@ -1,8 +1,24 @@
-# Start both backend and frontend dev servers
+# Start backend, frontend, and Caddy (HTTP/2) dev servers
 dev:
-    -lsof -ti :8000 | xargs kill -9 2>/dev/null
-    -lsof -ti :3000 | xargs kill -9 2>/dev/null
-    just backend & just frontend & wait
+    #!/usr/bin/env bash
+    lsof -ti :8000 | xargs kill -9 2>/dev/null || true
+    lsof -ti :3000 | xargs kill -9 2>/dev/null || true
+    lsof -ti :443 | xargs kill -9 2>/dev/null || true
+    # Ensure tele.view is in /etc/hosts
+    if ! grep -q 'tele.view' /etc/hosts; then
+      echo "Adding tele.view to /etc/hosts (requires password):"
+      sudo sh -c 'echo "127.0.0.1 tele.view" >> /etc/hosts'
+    fi
+    # Caddy needs port 443, may prompt for password on first run
+    caddy start --config Caddyfile
+    # Then background the rest
+    trap 'caddy stop; kill 0 2>/dev/null' EXIT INT TERM
+    (cd backend && uv run uvicorn main:app --reload --port 8000) &
+    (cd frontend && bun run dev) &
+    echo ""
+    echo "  https://tele.view  (HTTP/2 via Caddy)"
+    echo ""
+    wait
 
 # Start backend dev server
 backend:
@@ -11,6 +27,10 @@ backend:
 # Start frontend dev server
 frontend:
     cd frontend && bun run dev
+
+# Start Caddy reverse proxy (HTTP/2)
+caddy:
+    caddy run --config Caddyfile
 
 # Run all backend tests
 test:

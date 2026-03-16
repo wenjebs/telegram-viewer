@@ -20,7 +20,7 @@
 - `GET /{chat_id}/sync-status` — poll current sync status (idle/syncing/done/error with progress/total)
 - `DELETE /{chat_id}/media` — clear indexed media + cached files for a single group
 - `DELETE /media` — bulk clear all indexed media + cached files
-- `GET /hidden` — list hidden groups
+- `GET /hidden` — list hidden groups (merges sync_state — returns same shape as `GET /`)
 - `GET /hidden/count` — count hidden groups
 - `POST /{chat_id}/hide` — hide a group (sets hidden_at)
 - `POST /{chat_id}/unhide` — unhide a group (clears hidden_at)

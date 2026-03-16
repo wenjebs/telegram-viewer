@@ -14,6 +14,11 @@ const config = defineConfig({
     viteReact(),
   ],
   server: {
+    hmr: {
+      protocol: 'wss',
+      host: 'tele.view',
+      clientPort: 443,
+    },
     proxy: {
       '/api': {
         target: 'http://localhost:8000',

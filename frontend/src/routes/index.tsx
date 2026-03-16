@@ -26,7 +26,7 @@ import { useHiddenMedia } from '#/hooks/useHiddenMedia'
 import { useFavoritesMedia } from '#/hooks/useFavoritesMedia'
 import { useSelectMode } from '#/hooks/useSelectMode'
 import { useDragSelect } from '#/hooks/useDragSelect'
-import { useSyncPolling } from '#/hooks/useSyncPolling'
+import { useSyncStatus } from '#/hooks/useSyncStatus'
 import { useLightbox } from '#/hooks/useLightbox'
 import { usePrefetch } from '#/hooks/usePrefetch'
 import { formatDateParam } from '#/utils/format'
@@ -119,17 +119,6 @@ function Home() {
 
   usePrefetch(activeItems, authenticated === true)
 
-  // #region Refs for sync polling
-  const displayGroupIdsRef = useRef(displayFilteredGroupIds)
-  displayGroupIdsRef.current = displayFilteredGroupIds
-  const mediaTypeFilterRef = useRef(mediaTypeFilter)
-  mediaTypeFilterRef.current = mediaTypeFilter
-  const dateFromRef = useRef(dateFrom)
-  dateFromRef.current = dateFrom
-  const dateToRef = useRef(dateTo)
-  dateToRef.current = dateTo
-  // #endregion
-
   // #region Counts
   const refreshCounts = useCallback(() => {
     getHiddenCount()
@@ -149,11 +138,7 @@ function Home() {
     queryClient.invalidateQueries({ queryKey: ['media'] })
   }, [queryClient])
 
-  const { syncing, syncStatuses, handleSync } = useSyncPolling({
-    displayGroupIdsRef,
-    mediaTypeFilterRef,
-    dateFromRef,
-    dateToRef,
+  const { syncing, syncStatuses, handleSync } = useSyncStatus({
     onSyncComplete,
   })
   // #endregion

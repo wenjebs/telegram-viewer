@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { getDownloadUrl } from '#/api/client'
 import type { MediaItem } from '#/api/schemas'
 
-const MAX_CONCURRENT = 5
+const MAX_CONCURRENT = 3
 
 export function usePrefetch(items: MediaItem[], enabled: boolean) {
   const queryClient = useQueryClient()
@@ -57,7 +57,7 @@ export function usePrefetch(items: MediaItem[], enabled: boolean) {
       .map((item) => item.id)
 
     if (newIds.length > 0) {
-      queueRef.current.push(...newIds)
+      queueRef.current.unshift(...newIds)
       processQueue()
     }
 
