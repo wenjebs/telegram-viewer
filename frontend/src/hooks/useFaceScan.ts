@@ -22,7 +22,7 @@ export function useFaceScan({
     queryFn: getFaceScanStatus,
     refetchInterval: (query) => {
       const data = query.state.data
-      if (!data) return false
+      if (!data) return 2000
       return data.status === 'scanning' || data.status === 'clustering'
         ? 2000
         : false
