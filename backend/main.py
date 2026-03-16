@@ -13,6 +13,7 @@ from database import init_db
 from routes.auth import router as auth_router
 from routes.groups import router as groups_router
 from routes.media import router as media_router
+from routes.faces import router as faces_router
 from telegram_client import TelegramClientWrapper
 
 load_dotenv()
@@ -76,6 +77,7 @@ async def auth_key_error_handler(_request: Request, _exc: AuthKeyError):
 app.include_router(auth_router)
 app.include_router(groups_router)
 app.include_router(media_router)
+app.include_router(faces_router)
 
 
 @app.get("/health")
