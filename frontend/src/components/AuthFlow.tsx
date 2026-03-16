@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import type { FormEvent } from 'react'
 import { sendCode, verifyCode } from '#/api/client'
 
 interface Props {
@@ -16,7 +17,7 @@ export default function AuthFlow({ onAuthenticated }: Props) {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  const handleSendCode = async (e: React.FormEvent) => {
+  const handleSendCode = async (e: FormEvent) => {
     e.preventDefault()
     setError('')
     setLoading(true)
@@ -31,7 +32,7 @@ export default function AuthFlow({ onAuthenticated }: Props) {
     }
   }
 
-  const handleVerifyCode = async (e: React.FormEvent) => {
+  const handleVerifyCode = async (e: FormEvent) => {
     e.preventDefault()
     setError('')
     setLoading(true)
@@ -50,7 +51,7 @@ export default function AuthFlow({ onAuthenticated }: Props) {
     }
   }
 
-  const handlePassword = async (e: React.FormEvent) => {
+  const handlePassword = async (e: FormEvent) => {
     e.preventDefault()
     setError('')
     setLoading(true)
