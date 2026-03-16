@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { toast } from 'sonner'
 import {
-  downloadZip,
   unhideMediaBatch,
   hideMediaBatch,
   favoriteMediaBatch,
 } from '#/api/client'
+import { useZipDownload } from '#/hooks/useZipDownload'
 
 interface Props {
   selectedCount: number
@@ -14,7 +14,7 @@ interface Props {
   onDownload: () => void
   onCancel: () => void
   selectedIds: Set<number>
-  viewMode?: 'normal' | 'hidden' | 'favorites'
+  viewMode?: 'normal' | 'hidden' | 'favorites' | 'people'
   onUnhide?: () => void
   onHide?: () => void
   onFavorite?: () => void
@@ -32,29 +32,18 @@ export default function SelectionBar({
   onHide,
   onFavorite,
 }: Props) {
-  const [downloading, setDownloading] = useState(false)
   const [unhiding, setUnhiding] = useState(false)
   const [hiding, setHiding] = useState(false)
   const [favoriting, setFavoriting] = useState(false)
 
+  const { preparing, zipStatus, startDownload } = useZipDownload({
+    onComplete: onDownload,
+  })
+
   // #region Actions
-  const handleDownload = async () => {
-    if (selectedCount === 0 || downloading) return
-    setDownloading(true)
-    try {
-      const blob = await downloadZip([...selectedIds])
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = 'telegram_media.zip'
-      a.click()
-      URL.revokeObjectURL(url)
-      onDownload()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Download failed')
-    } finally {
-      setDownloading(false)
-    }
+  const handleDownload = () => {
+    if (selectedCount === 0 || preparing) return
+    startDownload([...selectedIds])
   }
 
   const handleUnhide = async () => {
@@ -183,9 +172,9 @@ export default function SelectionBar({
             <button
               className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
               onClick={handleDownload}
-              disabled={selectedCount === 0 || downloading}
+              disabled={selectedCount === 0 || preparing}
             >
-              {downloading ? (
+              {preparing ? (
                 <span className="flex items-center gap-2">
                   <svg
                     className="h-3.5 w-3.5 animate-spin"
@@ -203,7 +192,9 @@ export default function SelectionBar({
                       strokeLinecap="round"
                     />
                   </svg>
-                  Preparing...
+                  {zipStatus?.status === 'zipping'
+                    ? 'Building zip...'
+                    : `${zipStatus?.files_ready ?? 0}/${zipStatus?.files_total ?? '?'}...`}
                 </span>
               ) : (
                 '↓ Download'
