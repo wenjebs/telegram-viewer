@@ -15,6 +15,10 @@ from database import (
     get_all_dialogs,
     clear_chat_media,
     clear_all_media,
+    hide_dialog,
+    unhide_dialogs,
+    get_hidden_dialogs,
+    get_hidden_dialog_count,
 )
 from indexer import index_chat
 from utils import fire_and_forget
@@ -53,6 +57,10 @@ class ToggleActiveRequest(BaseModel):
 
 class SyncAllRequest(BaseModel):
     chat_ids: list[int]
+
+
+class UnhideBatchRequest(BaseModel):
+    dialog_ids: list[int]
 
 
 @router.get("")
@@ -94,6 +102,40 @@ async def refresh_groups():
     tg = get_tg()
     fire_and_forget(tg.refresh_dialogs())
     return JSONResponse(status_code=202, content={"detail": "Refresh started"})
+
+
+@router.get("/hidden")
+async def list_hidden_groups():
+    db = get_db()
+    return await get_hidden_dialogs(db)
+
+
+@router.get("/hidden/count")
+async def hidden_group_count():
+    db = get_db()
+    count = await get_hidden_dialog_count(db)
+    return {"count": count}
+
+
+@router.post("/unhide-batch")
+async def unhide_groups_batch(req: UnhideBatchRequest):
+    db = get_db()
+    await unhide_dialogs(db, req.dialog_ids)
+    return {"success": True}
+
+
+@router.post("/{chat_id}/hide")
+async def hide_group(chat_id: int):
+    db = get_db()
+    await hide_dialog(db, chat_id)
+    return {"success": True}
+
+
+@router.post("/{chat_id}/unhide")
+async def unhide_group(chat_id: int):
+    db = get_db()
+    await unhide_dialogs(db, [chat_id])
+    return {"success": True}
 
 
 @router.patch("/{chat_id}/active")

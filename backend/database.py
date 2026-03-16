@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS dialogs (
 """
 
 
+# region Init
 async def init_db(db: aiosqlite.Connection) -> None:
     await db.executescript(SCHEMA)
     db.row_factory = aiosqlite.Row
@@ -56,6 +57,9 @@ async def init_db(db: aiosqlite.Connection) -> None:
     for migration in [
         "ALTER TABLE dialogs ADD COLUMN last_message_date DATETIME",
         "ALTER TABLE media_items ADD COLUMN download_path TEXT",
+        "ALTER TABLE media_items ADD COLUMN hidden_at DATETIME",
+        "ALTER TABLE media_items ADD COLUMN favorited_at DATETIME",
+        "ALTER TABLE dialogs ADD COLUMN hidden_at DATETIME",
     ]:
         try:
             await db.execute(migration)
@@ -64,6 +68,10 @@ async def init_db(db: aiosqlite.Connection) -> None:
     await db.commit()
 
 
+# endregion
+
+
+# region Media CRUD
 async def insert_media_item(db: aiosqlite.Connection, item: dict) -> None:
     await db.execute(
         """INSERT OR IGNORE INTO media_items
@@ -122,7 +130,10 @@ async def get_media_page(
     date_from: str | None = None,
     date_to: str | None = None,
 ) -> list[dict]:
-    conditions = []
+    conditions = [
+        "hidden_at IS NULL",
+        "chat_id NOT IN (SELECT id FROM dialogs WHERE hidden_at IS NOT NULL)",
+    ]
     params: dict = {"limit": limit}
 
     if cursor_id is not None:
@@ -158,6 +169,10 @@ async def get_media_page(
     return [dict(row) for row in rows]
 
 
+# endregion
+
+
+# region Sync state
 async def upsert_sync_state(
     db: aiosqlite.Connection,
     chat_id: int,
@@ -205,6 +220,10 @@ async def update_file_ref(
     await db.commit()
 
 
+# endregion
+
+
+# region Clear media
 async def clear_chat_media(db: aiosqlite.Connection, chat_id: int) -> None:
     """Delete all media items and reset sync state for a chat."""
     await db.execute("DELETE FROM media_items WHERE chat_id = ?", (chat_id,))
@@ -229,12 +248,171 @@ async def clear_all_media(db: aiosqlite.Connection) -> list[str]:
     return paths
 
 
+# endregion
+
+
+# region Media lookups
+async def get_media_by_ids(
+    db: aiosqlite.Connection, media_ids: list[int]
+) -> list[dict]:
+    if not media_ids:
+        return []
+    placeholders = ", ".join("?" for _ in media_ids)
+    cursor = await db.execute(
+        f"SELECT * FROM media_items WHERE id IN ({placeholders})", media_ids
+    )
+    rows = await cursor.fetchall()
+    return [dict(row) for row in rows]
+
+
 async def get_media_by_id(db: aiosqlite.Connection, media_id: int) -> dict | None:
     cursor = await db.execute("SELECT * FROM media_items WHERE id = ?", (media_id,))
     row = await cursor.fetchone()
     return dict(row) if row else None
 
 
+# endregion
+
+
+# region Hidden
+async def hide_media_item(db: aiosqlite.Connection, media_id: int) -> None:
+    await db.execute(
+        "UPDATE media_items SET hidden_at = ? WHERE id = ?",
+        (datetime.now(timezone.utc).isoformat(), media_id),
+    )
+    await db.commit()
+
+
+async def unhide_media_items(db: aiosqlite.Connection, media_ids: list[int]) -> None:
+    if not media_ids:
+        return
+    placeholders = ", ".join("?" for _ in media_ids)
+    await db.execute(
+        f"UPDATE media_items SET hidden_at = NULL WHERE id IN ({placeholders})",
+        media_ids,
+    )
+    await db.commit()
+
+
+async def get_hidden_media_page(
+    db: aiosqlite.Connection,
+    cursor_id: int | None = None,
+    limit: int = 50,
+) -> list[dict]:
+    conditions = ["hidden_at IS NOT NULL"]
+    params: dict = {"limit": limit}
+
+    if cursor_id is not None:
+        conditions.append("id < :cursor_id")
+        params["cursor_id"] = cursor_id
+
+    where = f"WHERE {' AND '.join(conditions)}"
+    query = f"SELECT * FROM media_items {where} ORDER BY hidden_at DESC, id DESC LIMIT :limit"
+
+    cursor = await db.execute(query, params)
+    rows = await cursor.fetchall()
+    return [dict(row) for row in rows]
+
+
+async def get_hidden_count(db: aiosqlite.Connection) -> int:
+    cursor = await db.execute(
+        "SELECT COUNT(*) FROM media_items WHERE hidden_at IS NOT NULL"
+    )
+    row = await cursor.fetchone()
+    return row[0] if row else 0
+
+
+# endregion
+
+
+# region Hidden dialogs
+async def hide_dialog(db: aiosqlite.Connection, dialog_id: int) -> None:
+    await db.execute(
+        "UPDATE dialogs SET hidden_at = ? WHERE id = ?",
+        (datetime.now(timezone.utc).isoformat(), dialog_id),
+    )
+    await db.commit()
+
+
+async def unhide_dialogs(db: aiosqlite.Connection, dialog_ids: list[int]) -> None:
+    if not dialog_ids:
+        return
+    placeholders = ", ".join("?" for _ in dialog_ids)
+    await db.execute(
+        f"UPDATE dialogs SET hidden_at = NULL WHERE id IN ({placeholders})",
+        dialog_ids,
+    )
+    await db.commit()
+
+
+async def get_hidden_dialogs(db: aiosqlite.Connection) -> list[dict]:
+    cursor = await db.execute(
+        "SELECT * FROM dialogs WHERE hidden_at IS NOT NULL ORDER BY hidden_at DESC"
+    )
+    rows = await cursor.fetchall()
+    return [dict(row) for row in rows]
+
+
+async def get_hidden_dialog_count(db: aiosqlite.Connection) -> int:
+    cursor = await db.execute(
+        "SELECT COUNT(*) FROM dialogs WHERE hidden_at IS NOT NULL"
+    )
+    row = await cursor.fetchone()
+    return row[0] if row else 0
+
+
+# endregion
+
+
+# region Favorites
+async def favorite_media_item(db: aiosqlite.Connection, media_id: int) -> None:
+    await db.execute(
+        "UPDATE media_items SET favorited_at = ? WHERE id = ?",
+        (datetime.now(timezone.utc).isoformat(), media_id),
+    )
+    await db.commit()
+
+
+async def unfavorite_media_item(db: aiosqlite.Connection, media_id: int) -> None:
+    await db.execute(
+        "UPDATE media_items SET favorited_at = NULL WHERE id = ?",
+        (media_id,),
+    )
+    await db.commit()
+
+
+async def get_favorites_media_page(
+    db: aiosqlite.Connection,
+    cursor_id: int | None = None,
+    limit: int = 50,
+) -> list[dict]:
+    conditions = ["favorited_at IS NOT NULL"]
+    params: dict = {"limit": limit}
+
+    if cursor_id is not None:
+        conditions.append("id < :cursor_id")
+        params["cursor_id"] = cursor_id
+
+    where = f"WHERE {' AND '.join(conditions)}"
+    query = f"SELECT * FROM media_items {where} ORDER BY favorited_at DESC, id DESC LIMIT :limit"
+
+    cursor = await db.execute(query, params)
+    rows = await cursor.fetchall()
+    return [dict(row) for row in rows]
+
+
+async def get_favorites_count(db: aiosqlite.Connection) -> int:
+    cursor = await db.execute(
+        "SELECT COUNT(*) FROM media_items WHERE favorited_at IS NOT NULL"
+    )
+    row = await cursor.fetchone()
+    return row[0] if row else 0
+
+
+# endregion
+
+
+# region Dialogs
 async def upsert_dialogs_batch(db: aiosqlite.Connection, dialogs: list[dict]) -> None:
     """Bulk upsert dialog metadata into the dialogs table."""
     if not dialogs:
@@ -266,9 +444,10 @@ async def upsert_dialogs_batch(db: aiosqlite.Connection, dialogs: list[dict]) ->
 
 
 async def get_all_dialogs(db: aiosqlite.Connection) -> list[dict]:
-    """Fetch dialogs that have messages, ordered by most recent message first."""
+    """Fetch visible dialogs that have messages, ordered by most recent message first."""
     cursor = await db.execute(
         "SELECT * FROM dialogs WHERE last_message_date IS NOT NULL "
+        "AND hidden_at IS NULL "
         "ORDER BY last_message_date DESC"
     )
     rows = await cursor.fetchall()

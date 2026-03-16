@@ -3,12 +3,29 @@ from __future__ import annotations
 import asyncio
 import logging
 import mimetypes
+import os
+import tempfile
+import zipfile
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
+from starlette.background import BackgroundTask
 
-from database import get_media_page, get_media_by_id
+from database import (
+    get_media_page,
+    get_media_by_id,
+    get_media_by_ids,
+    hide_media_item,
+    unhide_media_items,
+    get_hidden_media_page,
+    get_hidden_count,
+    favorite_media_item,
+    unfavorite_media_item,
+    get_favorites_media_page,
+    get_favorites_count,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +36,7 @@ _tg = None
 CACHE_DIR = Path(__file__).parent.parent / "cache"
 
 
+# region Module state
 def set_db(db):
     global _db
     _db = db
@@ -37,6 +55,10 @@ def get_tg():
     return _tg
 
 
+# endregion
+
+
+# region List / Download zip
 @router.get("")
 async def list_media(
     cursor: int | None = Query(None),
@@ -67,6 +89,169 @@ async def list_media(
     return {"items": items, "next_cursor": next_cursor}
 
 
+class DownloadZipRequest(BaseModel):
+    media_ids: list[int]
+
+
+@router.post("/download-zip")
+async def download_zip(body: DownloadZipRequest):
+    unique_ids = list(set(body.media_ids))
+    if len(unique_ids) > 200:
+        raise HTTPException(status_code=400, detail="Maximum 200 items per zip")
+    if not unique_ids:
+        raise HTTPException(status_code=400, detail="No media IDs provided")
+
+    db = get_db()
+    items = await get_media_by_ids(db, unique_ids)
+    if len(items) != len(unique_ids):
+        found_ids = {item["id"] for item in items}
+        missing = [mid for mid in unique_ids if mid not in found_ids]
+        raise HTTPException(status_code=404, detail=f"Media not found: {missing}")
+
+    tg = get_tg()
+    await asyncio.to_thread(CACHE_DIR.mkdir, parents=True, exist_ok=True)
+
+    # Ensure all files are cached locally
+    async def ensure_cached(item: dict) -> str:
+        if item.get("download_path") and Path(item["download_path"]).exists():
+            return item["download_path"]
+
+        data = await _download_full(tg, item)
+        mime = item.get("mime_type", "application/octet-stream")
+        ext = mimetypes.guess_extension(mime) or ""
+        download_path = CACHE_DIR / f"{item['id']}_full{ext}"
+        await asyncio.to_thread(download_path.write_bytes, data)
+
+        await db.execute(
+            "UPDATE media_items SET download_path = ? WHERE id = ?",
+            (str(download_path), item["id"]),
+        )
+        await db.commit()
+        return str(download_path)
+
+    paths = await asyncio.gather(*(ensure_cached(item) for item in items))
+
+    # Build zip in temp file
+    tmp_fd, tmp_path = tempfile.mkstemp(suffix=".zip")
+    os.close(tmp_fd)
+
+    def _build_zip():
+        with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            for item, local_path in zip(items, paths):
+                mime = item.get("mime_type", "application/octet-stream")
+                ext = mimetypes.guess_extension(mime) or ""
+                date_str = item["date"][:10] if item.get("date") else "unknown"
+                arcname = f"{item['chat_name']}/{date_str}_{item['message_id']}{ext}"
+                zf.write(local_path, arcname)
+
+    await asyncio.to_thread(_build_zip)
+
+    return FileResponse(
+        tmp_path,
+        media_type="application/zip",
+        filename="telegram_media.zip",
+        background=BackgroundTask(os.unlink, tmp_path),
+    )
+
+
+# endregion
+
+
+# region Hidden / Favorites (static routes MUST come before /{media_id})
+class UnhideBatchRequest(BaseModel):
+    media_ids: list[int]
+
+
+@router.get("/hidden")
+async def list_hidden_media(
+    cursor: int | None = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+):
+    db = get_db()
+    items = await get_hidden_media_page(db, cursor_id=cursor, limit=limit)
+    for item in items:
+        if " " in item["date"]:
+            item["date"] = item["date"].replace(" ", "T", 1)
+        item.pop("file_ref", None)
+    next_cursor = items[-1]["id"] if len(items) == limit else None
+    return {"items": items, "next_cursor": next_cursor}
+
+
+@router.get("/hidden/count")
+async def hidden_media_count():
+    db = get_db()
+    count = await get_hidden_count(db)
+    return {"count": count}
+
+
+@router.post("/unhide-batch")
+async def unhide_media_batch(body: UnhideBatchRequest):
+    if not body.media_ids:
+        raise HTTPException(status_code=400, detail="No media IDs provided")
+    db = get_db()
+    await unhide_media_items(db, body.media_ids)
+    return {"success": True}
+
+
+@router.get("/favorites")
+async def list_favorites_media(
+    cursor: int | None = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+):
+    db = get_db()
+    items = await get_favorites_media_page(db, cursor_id=cursor, limit=limit)
+    for item in items:
+        if " " in item["date"]:
+            item["date"] = item["date"].replace(" ", "T", 1)
+        item.pop("file_ref", None)
+    next_cursor = items[-1]["id"] if len(items) == limit else None
+    return {"items": items, "next_cursor": next_cursor}
+
+
+@router.get("/favorites/count")
+async def favorites_media_count():
+    db = get_db()
+    count = await get_favorites_count(db)
+    return {"count": count}
+
+
+@router.post("/{media_id}/favorite")
+async def favorite_media(media_id: int):
+    db = get_db()
+    item = await get_media_by_id(db, media_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Media not found")
+    if item.get("favorited_at"):
+        await unfavorite_media_item(db, media_id)
+    else:
+        await favorite_media_item(db, media_id)
+    return {"success": True, "favorited": not item.get("favorited_at")}
+
+
+@router.post("/{media_id}/hide")
+async def hide_media(media_id: int):
+    db = get_db()
+    item = await get_media_by_id(db, media_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Media not found")
+    await hide_media_item(db, media_id)
+    return {"success": True}
+
+
+@router.post("/{media_id}/unhide")
+async def unhide_media(media_id: int):
+    db = get_db()
+    item = await get_media_by_id(db, media_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Media not found")
+    await unhide_media_items(db, [media_id])
+    return {"success": True}
+
+
+# endregion
+
+
+# region Thumbnail / Download / Telegram helpers
 @router.get("/{media_id}/thumbnail")
 async def get_thumbnail(media_id: int):
     db = get_db()

@@ -51,6 +51,10 @@ export function useMedia() {
     setNextCursor(null)
   }, [])
 
+  const removeItem = useCallback((id: number) => {
+    setItems((prev) => prev.filter((item) => item.id !== id))
+  }, [])
+
   return {
     items,
     loading,
@@ -58,5 +62,6 @@ export function useMedia() {
     hasMore: nextCursor !== null,
     fetchMedia,
     reset,
+    removeItem,
   }
 }

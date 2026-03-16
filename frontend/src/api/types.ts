@@ -9,6 +9,7 @@ export interface Group {
   unread_count: number
   active: boolean
   last_synced: string | null
+  hidden_at: string | null
 }
 
 export interface MediaItem {
@@ -25,6 +26,8 @@ export interface MediaItem {
   duration: number | null
   caption: string | null
   thumbnail_path: string | null
+  hidden_at: string | null
+  favorited_at: string | null
 }
 
 export interface MediaPage {
