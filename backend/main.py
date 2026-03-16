@@ -11,6 +11,7 @@ from telethon.errors import AuthKeyError
 from database import init_db
 from routes.auth import router as auth_router, set_tg
 from routes.groups import router as groups_router, set_tg as set_groups_tg, set_db as set_groups_db
+from routes.media import router as media_router, set_tg as set_media_tg, set_db as set_media_db
 from telegram_client import TelegramClientWrapper
 
 load_dotenv()
@@ -35,6 +36,8 @@ async def lifespan(app: FastAPI):
     set_tg(tg)
     set_groups_tg(tg)
     set_groups_db(db)
+    set_media_tg(tg)
+    set_media_db(db)
 
     yield
 
@@ -59,6 +62,7 @@ async def auth_key_error_handler(request: Request, exc: AuthKeyError):
 
 app.include_router(auth_router)
 app.include_router(groups_router)
+app.include_router(media_router)
 
 
 @app.get("/health")
