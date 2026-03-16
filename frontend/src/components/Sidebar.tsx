@@ -23,8 +23,15 @@ interface Props {
   syncStatuses: Record<number, SyncStatus>
   selectMode?: boolean
   onEnterSelectMode?: () => void
-  viewMode?: 'normal' | 'hidden' | 'favorites'
-  onViewModeChange?: (mode: 'normal' | 'hidden' | 'favorites') => void
+  viewMode?: 'normal' | 'hidden' | 'favorites' | 'people'
+  onViewModeChange?: (
+    mode: 'normal' | 'hidden' | 'favorites' | 'people',
+  ) => void
+  personCount?: number
+  faceScanning?: boolean
+  faceScanScanned?: number
+  faceScanTotal?: number
+  onStartFaceScan?: () => void
   hiddenCount?: number
   favoritesCount?: number
   showHiddenDialogs?: boolean
@@ -86,6 +93,11 @@ export default function Sidebar({
   onHideDialog,
   onUnhideDialog,
   hiddenDialogCount = 0,
+  personCount = 0,
+  faceScanning,
+  faceScanScanned,
+  faceScanTotal,
+  onStartFaceScan,
 }: Props) {
   const [searchQuery, setSearchQuery] = useState('')
   const [chatsCollapsed, setChatsCollapsed] = useState(false)
@@ -363,6 +375,34 @@ export default function Sidebar({
               </span>
             )}
           </button>
+          <button
+            className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm ${
+              viewMode === 'people'
+                ? 'bg-neutral-800 text-white'
+                : 'text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200'
+            }`}
+            onClick={() =>
+              onViewModeChange?.(viewMode === 'people' ? 'normal' : 'people')
+            }
+          >
+            <svg
+              className="h-4 w-4"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+            >
+              <circle cx="5.5" cy="5" r="2.5" />
+              <circle cx="10.5" cy="5" r="2.5" />
+              <path d="M1 14c0-2.2 1.8-4 4-4h.5M15 14c0-2.2-1.8-4-4-4h-.5" />
+            </svg>
+            <span className="flex-1 text-left">People</span>
+            {personCount > 0 && (
+              <span className="rounded-full bg-neutral-700 px-1.5 py-0.5 text-xs text-neutral-300">
+                {personCount}
+              </span>
+            )}
+          </button>
         </div>
       )}
       <DateRangeFilter
@@ -380,6 +420,19 @@ export default function Sidebar({
           </button>
         ))}
       </div>
+      {viewMode === 'people' && onStartFaceScan && (
+        <div className="mx-3 mt-3">
+          <button
+            className="flex w-full items-center justify-center gap-2 rounded bg-sky-600 px-3 py-1.5 text-sm text-white hover:bg-sky-500 disabled:opacity-50"
+            onClick={() => onStartFaceScan()}
+            disabled={faceScanning}
+          >
+            {faceScanning
+              ? `Scanning... ${faceScanScanned ?? 0}/${faceScanTotal ?? 0}`
+              : 'Scan Faces'}
+          </button>
+        </div>
+      )}
       <div className="m-3 flex gap-2">
         <button
           className="flex-1 rounded-md bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-50"

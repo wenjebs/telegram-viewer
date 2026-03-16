@@ -13,7 +13,7 @@ import {
   getHiddenDialogCount,
 } from '#/api/client'
 import type { DateRange } from 'react-day-picker'
-import type { Group, MediaItem } from '#/api/schemas'
+import type { Group, MediaItem, Person } from '#/api/schemas'
 import AuthFlow from '#/components/AuthFlow'
 import Sidebar from '#/components/Sidebar'
 import MediaGrid from '#/components/MediaGrid'
@@ -29,11 +29,18 @@ import { useDragSelect } from '#/hooks/useDragSelect'
 import { useSyncStatus } from '#/hooks/useSyncStatus'
 import { useLightbox } from '#/hooks/useLightbox'
 import { usePrefetch } from '#/hooks/usePrefetch'
+import { useFaceScan } from '#/hooks/useFaceScan'
+import { usePersons } from '#/hooks/usePersons'
+import { usePersonMedia } from '#/hooks/usePersonMedia'
+import { renamePerson, mergePersons } from '#/api/client'
+import PeopleGrid from '#/components/PeopleGrid'
+import PersonDetail from '#/components/PersonDetail'
+import PersonMergeModal from '#/components/PersonMergeModal'
 import { formatDateParam } from '#/utils/format'
 
 export const Route = createFileRoute('/')({ component: Home })
 
-type ViewMode = 'normal' | 'hidden' | 'favorites'
+type ViewMode = 'normal' | 'hidden' | 'favorites' | 'people'
 
 function Home() {
   const queryClient = useQueryClient()
@@ -47,6 +54,8 @@ function Home() {
   const [viewMode, setViewMode] = useState<ViewMode>('normal')
   const [hiddenCount, setHiddenCount] = useState(0)
   const [favoritesCount, setFavoritesCount] = useState(0)
+  const [selectedPerson, setSelectedPerson] = useState<Person | null>(null)
+  const [showMergeModal, setShowMergeModal] = useState(false)
   const [showHiddenDialogs, setShowHiddenDialogs] = useState(false)
   const [hiddenDialogs, setHiddenDialogs] = useState<Group[]>([])
   const [hiddenDialogCount, setHiddenDialogCount] = useState(0)
@@ -90,6 +99,14 @@ function Home() {
   const favorites = useFavoritesMedia(
     viewMode === 'favorites' && authenticated === true,
   )
+  const persons = usePersons(viewMode === 'people' && authenticated === true)
+  const personMedia = usePersonMedia(
+    selectedPerson?.id ?? null,
+    viewMode === 'people' && selectedPerson != null && authenticated === true,
+  )
+  const faceScan = useFaceScan({
+    onScanComplete: () => persons.invalidate(),
+  })
   const selectMode = useSelectMode()
   const gridContainerRef = useRef<HTMLDivElement>(null)
   const dragSelect = useDragSelect({
@@ -107,7 +124,9 @@ function Home() {
       ? hidden
       : viewMode === 'favorites'
         ? favorites
-        : media
+        : viewMode === 'people' && selectedPerson
+          ? personMedia
+          : media
   const activeItems = useMemo(
     () =>
       [...activeSource.items].toSorted((a, b) => b.date.localeCompare(a.date)),
@@ -223,6 +242,7 @@ function Home() {
   const handleViewModeChange = (mode: ViewMode) => {
     selectMode.exitSelectMode()
     lightbox.setSelectedItem(null)
+    setSelectedPerson(null)
     setViewMode(mode)
   }
 
@@ -303,6 +323,11 @@ function Home() {
         onHideDialog={handleHideDialog}
         onUnhideDialog={handleUnhideDialog}
         hiddenDialogCount={hiddenDialogCount}
+        personCount={faceScan.status.person_count}
+        faceScanning={faceScan.scanning}
+        faceScanScanned={faceScan.status.scanned}
+        faceScanTotal={faceScan.status.total}
+        onStartFaceScan={() => faceScan.startScan(false)}
       />
       <div className="relative flex flex-1 flex-col overflow-hidden">
         {activeGroupIds.length > 0 && (
@@ -355,23 +380,49 @@ function Home() {
             </button>
           </div>
         )}
-        <MediaGrid
-          items={activeItems}
-          hasMore={activeHasMore}
-          loading={activeLoading}
-          onLoadMore={handleLoadMore}
-          onItemClick={handleItemClick}
-          syncing={viewMode === 'normal' ? syncing : false}
-          syncStatuses={syncStatuses}
-          selectMode={selectMode.active}
-          selectedIds={selectMode.selectedIds}
-          onToggle={handleToggle}
-          onSelectDateGroup={selectMode.selectDateGroup}
-          onLongPress={handleLongPress}
-          containerRef={gridContainerRef}
-          dragHandlers={dragSelect.handlers}
-          selectionRect={dragSelect.selectionRect}
-        />
+        {viewMode === 'people' && !selectedPerson ? (
+          <PeopleGrid
+            persons={persons.persons}
+            loading={persons.loading}
+            onPersonClick={setSelectedPerson}
+          />
+        ) : (
+          <>
+            {viewMode === 'people' && selectedPerson && (
+              <PersonDetail
+                person={selectedPerson}
+                onBack={() => setSelectedPerson(null)}
+                onRename={async (name) => {
+                  await renamePerson(selectedPerson.id, name)
+                  setSelectedPerson({
+                    ...selectedPerson,
+                    name,
+                    display_name: name,
+                  })
+                  persons.invalidate()
+                }}
+                onMerge={() => setShowMergeModal(true)}
+              />
+            )}
+            <MediaGrid
+              items={activeItems}
+              hasMore={activeHasMore}
+              loading={activeLoading}
+              onLoadMore={handleLoadMore}
+              onItemClick={handleItemClick}
+              syncing={viewMode === 'normal' ? syncing : false}
+              syncStatuses={syncStatuses}
+              selectMode={selectMode.active}
+              selectedIds={selectMode.selectedIds}
+              onToggle={handleToggle}
+              onSelectDateGroup={selectMode.selectDateGroup}
+              onLongPress={handleLongPress}
+              containerRef={gridContainerRef}
+              dragHandlers={dragSelect.handlers}
+              selectionRect={dragSelect.selectionRect}
+            />
+          </>
+        )}
       </div>
       {lightbox.selectedItem && (
         <Lightbox
@@ -413,6 +464,21 @@ function Home() {
             selectMode.exitSelectMode()
             refreshCounts()
           }}
+        />
+      )}
+      {showMergeModal && selectedPerson && (
+        <PersonMergeModal
+          persons={persons.persons}
+          currentPersonId={selectedPerson.id}
+          onMerge={async (mergeId) => {
+            await mergePersons(selectedPerson.id, mergeId)
+            setShowMergeModal(false)
+            persons.invalidate()
+            queryClient.invalidateQueries({
+              queryKey: ['faces', 'persons', selectedPerson.id, 'media'],
+            })
+          }}
+          onClose={() => setShowMergeModal(false)}
         />
       )}
     </div>
