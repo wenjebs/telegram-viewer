@@ -49,6 +49,42 @@ CREATE TABLE IF NOT EXISTS dialogs (
     last_message_date DATETIME,
     updated_at      DATETIME NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS persons (
+    id              INTEGER PRIMARY KEY,
+    name            TEXT,
+    representative_face_id INTEGER,
+    face_count      INTEGER NOT NULL DEFAULT 0,
+    created_at      DATETIME NOT NULL,
+    updated_at      DATETIME NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS faces (
+    id              INTEGER PRIMARY KEY,
+    media_id        INTEGER NOT NULL,
+    person_id       INTEGER,
+    embedding       BLOB NOT NULL,
+    bbox_x          REAL NOT NULL,
+    bbox_y          REAL NOT NULL,
+    bbox_w          REAL NOT NULL,
+    bbox_h          REAL NOT NULL,
+    confidence      REAL NOT NULL,
+    crop_path       TEXT,
+    created_at      DATETIME NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_faces_media ON faces(media_id);
+CREATE INDEX IF NOT EXISTS idx_faces_person ON faces(person_id);
+
+CREATE TABLE IF NOT EXISTS face_scan_state (
+    id              INTEGER PRIMARY KEY DEFAULT 1,
+    status          TEXT NOT NULL DEFAULT 'idle',
+    scanned_count   INTEGER NOT NULL DEFAULT 0,
+    total_count     INTEGER NOT NULL DEFAULT 0,
+    last_scanned_media_id INTEGER,
+    last_error      TEXT,
+    updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
@@ -67,6 +103,7 @@ async def init_db(db: aiosqlite.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_media_hidden ON media_items(hidden_at)",
         "CREATE INDEX IF NOT EXISTS idx_media_favorited ON media_items(favorited_at)",
         "CREATE INDEX IF NOT EXISTS idx_media_chat_date ON media_items(chat_id, date DESC)",
+        "ALTER TABLE media_items ADD COLUMN faces_scanned INTEGER DEFAULT 0",
     ]:
         try:
             await db.execute(migration)
@@ -517,3 +554,235 @@ async def get_all_dialogs(db: aiosqlite.Connection) -> list[dict]:
     )
     rows = await cursor.fetchall()
     return [dict(row) for row in rows]
+
+
+# endregion
+
+
+# region Faces
+
+async def get_unscanned_photos(db: aiosqlite.Connection, limit: int = 50) -> list[dict]:
+    """Photos not yet scanned for faces, prioritizing those with cached thumbnails."""
+    cursor = await db.execute(
+        """SELECT * FROM media_items
+           WHERE media_type = 'photo' AND faces_scanned = 0
+           ORDER BY thumbnail_path IS NOT NULL DESC, id DESC
+           LIMIT ?""",
+        (limit,),
+    )
+    rows = await cursor.fetchall()
+    return [dict(r) for r in rows]
+
+
+async def get_unscanned_photo_count(db: aiosqlite.Connection) -> int:
+    cursor = await db.execute(
+        "SELECT COUNT(*) FROM media_items WHERE media_type = 'photo' AND faces_scanned = 0"
+    )
+    row = await cursor.fetchone()
+    return row[0] if row else 0
+
+
+async def get_total_photo_count(db: aiosqlite.Connection) -> int:
+    cursor = await db.execute(
+        "SELECT COUNT(*) FROM media_items WHERE media_type = 'photo'"
+    )
+    row = await cursor.fetchone()
+    return row[0] if row else 0
+
+
+async def insert_faces_batch(db: aiosqlite.Connection, faces: list[dict]) -> list[int]:
+    """Insert face rows, return their IDs."""
+    ids = []
+    for face in faces:
+        cursor = await db.execute(
+            """INSERT INTO faces (media_id, embedding, bbox_x, bbox_y, bbox_w, bbox_h,
+               confidence, crop_path, created_at)
+               VALUES (:media_id, :embedding, :bbox_x, :bbox_y, :bbox_w, :bbox_h,
+               :confidence, :crop_path, :created_at)""",
+            face,
+        )
+        ids.append(cursor.lastrowid)
+    return ids
+
+
+async def mark_media_scanned(db: aiosqlite.Connection, media_ids: list[int]) -> None:
+    if not media_ids:
+        return
+    placeholders = ", ".join("?" for _ in media_ids)
+    await db.execute(
+        f"UPDATE media_items SET faces_scanned = 1 WHERE id IN ({placeholders})",
+        media_ids,
+    )
+
+
+async def get_all_face_embeddings(db: aiosqlite.Connection) -> list[dict]:
+    cursor = await db.execute("SELECT id, embedding FROM faces")
+    rows = await cursor.fetchall()
+    return [dict(r) for r in rows]
+
+
+async def clear_person_assignments(db: aiosqlite.Connection) -> None:
+    await db.execute("UPDATE faces SET person_id = NULL")
+    await db.execute("DELETE FROM persons")
+
+
+async def bulk_assign_persons(db: aiosqlite.Connection, clusters: list[dict]) -> None:
+    """Create persons and assign faces.
+
+    Each cluster dict: {face_ids: list[int], representative_face_id: int}
+    """
+    now = datetime.now(tz=timezone.utc).isoformat()
+    for cluster in clusters:
+        cursor = await db.execute(
+            """INSERT INTO persons (representative_face_id, face_count, created_at, updated_at)
+               VALUES (?, ?, ?, ?)""",
+            (cluster["representative_face_id"], len(cluster["face_ids"]), now, now),
+        )
+        person_id = cursor.lastrowid
+        placeholders = ", ".join("?" for _ in cluster["face_ids"])
+        await db.execute(
+            f"UPDATE faces SET person_id = ? WHERE id IN ({placeholders})",
+            [person_id, *cluster["face_ids"]],
+        )
+
+
+async def get_all_persons(db: aiosqlite.Connection) -> list[dict]:
+    cursor = await db.execute(
+        """SELECT p.*, f.crop_path as avatar_crop_path
+           FROM persons p
+           LEFT JOIN faces f ON f.id = p.representative_face_id
+           ORDER BY p.face_count DESC"""
+    )
+    rows = await cursor.fetchall()
+    result = []
+    for r in rows:
+        d = dict(r)
+        d["display_name"] = d["name"] or f"Person {d['id']}"
+        result.append(d)
+    return result
+
+
+async def get_person(db: aiosqlite.Connection, person_id: int) -> dict | None:
+    cursor = await db.execute(
+        """SELECT p.*, f.crop_path as avatar_crop_path
+           FROM persons p
+           LEFT JOIN faces f ON f.id = p.representative_face_id
+           WHERE p.id = ?""",
+        (person_id,),
+    )
+    row = await cursor.fetchone()
+    if not row:
+        return None
+    d = dict(row)
+    d["display_name"] = d["name"] or f"Person {d['id']}"
+    return d
+
+
+async def rename_person(db: aiosqlite.Connection, person_id: int, name: str) -> None:
+    now = datetime.now(tz=timezone.utc).isoformat()
+    await db.execute(
+        "UPDATE persons SET name = ?, updated_at = ? WHERE id = ?",
+        (name, now, person_id),
+    )
+    await db.commit()
+
+
+async def merge_persons(db: aiosqlite.Connection, keep_id: int, merge_id: int) -> None:
+    """Move all faces from merge_id to keep_id, delete merge_id."""
+    await db.execute(
+        "UPDATE faces SET person_id = ? WHERE person_id = ?",
+        (keep_id, merge_id),
+    )
+    cursor = await db.execute(
+        "SELECT COUNT(*) FROM faces WHERE person_id = ?", (keep_id,)
+    )
+    row = await cursor.fetchone()
+    now = datetime.now(tz=timezone.utc).isoformat()
+    await db.execute(
+        "UPDATE persons SET face_count = ?, updated_at = ? WHERE id = ?",
+        (row[0], now, keep_id),
+    )
+    await db.execute("DELETE FROM persons WHERE id = ?", (merge_id,))
+    await db.commit()
+
+
+async def remove_face_from_person(db: aiosqlite.Connection, face_id: int) -> None:
+    """Unassign a face from its person, update counts."""
+    cursor = await db.execute(
+        "SELECT person_id FROM faces WHERE id = ?", (face_id,)
+    )
+    row = await cursor.fetchone()
+    if not row or not row[0]:
+        return
+    person_id = row[0]
+    await db.execute("UPDATE faces SET person_id = NULL WHERE id = ?", (face_id,))
+    now = datetime.now(tz=timezone.utc).isoformat()
+    await db.execute(
+        "UPDATE persons SET face_count = face_count - 1, updated_at = ? WHERE id = ?",
+        (now, person_id),
+    )
+    await db.execute(
+        "DELETE FROM persons WHERE id = ? AND face_count <= 0", (person_id,)
+    )
+    await db.commit()
+
+
+async def get_person_media_page(
+    db: aiosqlite.Connection,
+    person_id: int,
+    cursor_id: int | None = None,
+    cursor_value: str | None = None,
+    limit: int = 50,
+) -> list[dict]:
+    """Get media items containing a specific person's face."""
+    conditions = [
+        "hidden_at IS NULL",
+        "id IN (SELECT media_id FROM faces WHERE person_id = :person_id)",
+    ]
+    params: dict = {"person_id": person_id}
+    return await _paginate_media(
+        db,
+        conditions,
+        params,
+        cursor_id=cursor_id,
+        cursor_value=cursor_value,
+        cursor_column="date",
+        limit=limit,
+        order_by="date DESC, id DESC",
+    )
+
+
+async def get_face_scan_state(db: aiosqlite.Connection) -> dict:
+    cursor = await db.execute("SELECT * FROM face_scan_state WHERE id = 1")
+    row = await cursor.fetchone()
+    if not row:
+        return {"status": "idle", "scanned_count": 0, "total_count": 0}
+    return dict(row)
+
+
+async def update_face_scan_state(db: aiosqlite.Connection, **kwargs) -> None:
+    cursor = await db.execute("SELECT id FROM face_scan_state WHERE id = 1")
+    row = await cursor.fetchone()
+    now = datetime.now(tz=timezone.utc).isoformat()
+    if not row:
+        await db.execute(
+            """INSERT INTO face_scan_state (id, status, scanned_count, total_count, updated_at)
+               VALUES (1, 'idle', 0, 0, ?)""",
+            (now,),
+        )
+    sets = ", ".join(f"{k} = :{k}" for k in kwargs)
+    kwargs["now"] = now
+    await db.execute(
+        f"UPDATE face_scan_state SET {sets}, updated_at = :now WHERE id = 1",
+        kwargs,
+    )
+    await db.commit()
+
+
+async def get_person_count(db: aiosqlite.Connection) -> int:
+    cursor = await db.execute("SELECT COUNT(*) FROM persons")
+    row = await cursor.fetchone()
+    return row[0] if row else 0
+
+
+# endregion
