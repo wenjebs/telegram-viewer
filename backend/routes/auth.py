@@ -2,26 +2,15 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+
+from deps import get_tg
 
 if TYPE_CHECKING:
     from telegram_client import TelegramClientWrapper
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-
-# This will be set by main.py at startup
-_tg: TelegramClientWrapper | None = None
-
-
-def set_tg(tg: TelegramClientWrapper) -> None:
-    global _tg
-    _tg = tg
-
-
-def get_tg() -> TelegramClientWrapper:
-    assert _tg is not None, "Telegram client not initialized"
-    return _tg
 
 
 class SendCodeRequest(BaseModel):
@@ -36,22 +25,19 @@ class VerifyRequest(BaseModel):
 
 
 @router.get("/status")
-async def auth_status():
-    tg = get_tg()
+async def auth_status(tg: TelegramClientWrapper = Depends(get_tg)):
     authenticated = await tg.is_authenticated()
     return {"authenticated": authenticated}
 
 
 @router.post("/send-code")
-async def send_code(req: SendCodeRequest):
-    tg = get_tg()
+async def send_code(req: SendCodeRequest, tg: TelegramClientWrapper = Depends(get_tg)):
     phone_code_hash = await tg.send_code(req.phone)
     return {"phone_code_hash": phone_code_hash}
 
 
 @router.post("/verify")
-async def verify(req: VerifyRequest):
-    tg = get_tg()
+async def verify(req: VerifyRequest, tg: TelegramClientWrapper = Depends(get_tg)):
     try:
         await tg.verify_code(req.phone, req.code, req.phone_code_hash, req.password)
     except Exception as e:
@@ -60,7 +46,6 @@ async def verify(req: VerifyRequest):
 
 
 @router.post("/logout")
-async def logout():
-    tg = get_tg()
+async def logout(tg: TelegramClientWrapper = Depends(get_tg)):
     await tg.logout()
     return {"success": True}

@@ -87,6 +87,7 @@ async def test_index_chat_incremental(db):
 
     # Check sync state was saved
     state = await get_sync_state(db, chat_id=1)
+    assert state is not None
     assert state["last_msg_id"] == 2
 
     # Second sync with no new messages

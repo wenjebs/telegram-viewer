@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react'
-import type { MediaItem } from '#/api/types'
+import type { MediaItem } from '#/api/schemas'
 
 export function useSelectMode() {
   // #region State

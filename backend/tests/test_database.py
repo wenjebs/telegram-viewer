@@ -147,6 +147,7 @@ async def test_sync_state_upsert_and_get(db):
         db, chat_id=1, chat_name="Test", active=True, last_msg_id=500
     )
     state = await get_sync_state(db, chat_id=1)
+    assert state is not None
     assert state["active"] == 1
     assert state["last_msg_id"] == 500
     # Update
@@ -154,6 +155,7 @@ async def test_sync_state_upsert_and_get(db):
         db, chat_id=1, chat_name="Test", active=True, last_msg_id=600
     )
     state = await get_sync_state(db, chat_id=1)
+    assert state is not None
     assert state["last_msg_id"] == 600
 
 

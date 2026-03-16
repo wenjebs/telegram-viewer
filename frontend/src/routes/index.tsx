@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
+import { useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import {
   getAuthStatus,
   clearAllMedia,
@@ -11,7 +13,7 @@ import {
   getHiddenDialogCount,
 } from '#/api/client'
 import type { DateRange } from 'react-day-picker'
-import type { Group, MediaItem } from '#/api/types'
+import type { Group, MediaItem } from '#/api/schemas'
 import AuthFlow from '#/components/AuthFlow'
 import Sidebar from '#/components/Sidebar'
 import MediaGrid from '#/components/MediaGrid'
@@ -19,21 +21,23 @@ import Lightbox from '#/components/Lightbox'
 import SelectionBar from '#/components/SelectionBar'
 import { useGroups } from '#/hooks/useGroups'
 import { useMedia } from '#/hooks/useMedia'
+import type { MediaFilters } from '#/hooks/useMedia'
 import { useHiddenMedia } from '#/hooks/useHiddenMedia'
 import { useFavoritesMedia } from '#/hooks/useFavoritesMedia'
 import { useSelectMode } from '#/hooks/useSelectMode'
 import { useDragSelect } from '#/hooks/useDragSelect'
 import { useSyncPolling } from '#/hooks/useSyncPolling'
 import { useLightbox } from '#/hooks/useLightbox'
+import { usePrefetch } from '#/hooks/usePrefetch'
+import { formatDateParam } from '#/utils/format'
 
 export const Route = createFileRoute('/')({ component: Home })
 
 type ViewMode = 'normal' | 'hidden' | 'favorites'
 
-const formatDate = (d: Date) =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-
 function Home() {
+  const queryClient = useQueryClient()
+
   // #region State
   const [authenticated, setAuthenticated] = useState<boolean | null>(null)
   const [mediaTypeFilter, setMediaTypeFilter] = useState<string | null>(null)
@@ -48,16 +52,44 @@ function Home() {
   const [hiddenDialogCount, setHiddenDialogCount] = useState(0)
   // #endregion
 
+  // #region Date filters
+  const dateFrom = useMemo(
+    () => (dateRange?.from ? formatDateParam(dateRange.from) : undefined),
+    [dateRange?.from],
+  )
+  const dateTo = useMemo(
+    () => (dateRange?.to ? formatDateParam(dateRange.to) : undefined),
+    [dateRange?.to],
+  )
+  // #endregion
+
   // #region Hooks
   const {
     groups,
     toggleActive,
     activeGroupIds,
+    displayGroupIds,
+    displayFilteredGroupIds,
+    toggleDisplayFilter,
+    clearDisplayFilter,
     refetch: refetchGroups,
   } = useGroups(authenticated === true)
-  const media = useMedia()
-  const hidden = useHiddenMedia()
-  const favorites = useFavoritesMedia()
+
+  const mediaFilters: MediaFilters = useMemo(
+    () => ({
+      groups: displayFilteredGroupIds,
+      type: mediaTypeFilter ?? undefined,
+      dateFrom,
+      dateTo,
+    }),
+    [displayFilteredGroupIds, mediaTypeFilter, dateFrom, dateTo],
+  )
+
+  const media = useMedia(mediaFilters, authenticated === true)
+  const hidden = useHiddenMedia(viewMode === 'hidden' && authenticated === true)
+  const favorites = useFavoritesMedia(
+    viewMode === 'favorites' && authenticated === true,
+  )
   const selectMode = useSelectMode()
   const gridContainerRef = useRef<HTMLDivElement>(null)
   const dragSelect = useDragSelect({
@@ -85,20 +117,11 @@ function Home() {
   const activeHasMore = activeSource.hasMore
   // #endregion
 
-  // #region Date filters
-  const dateFrom = useMemo(
-    () => (dateRange?.from ? formatDate(dateRange.from) : undefined),
-    [dateRange?.from],
-  )
-  const dateTo = useMemo(
-    () => (dateRange?.to ? formatDate(dateRange.to) : undefined),
-    [dateRange?.to],
-  )
-  // #endregion
+  usePrefetch(activeItems, authenticated === true)
 
-  // #region Refs for interval/callback access
-  const activeGroupIdsRef = useRef(activeGroupIds)
-  activeGroupIdsRef.current = activeGroupIds
+  // #region Refs for sync polling
+  const displayGroupIdsRef = useRef(displayFilteredGroupIds)
+  displayGroupIdsRef.current = displayFilteredGroupIds
   const mediaTypeFilterRef = useRef(mediaTypeFilter)
   mediaTypeFilterRef.current = mediaTypeFilter
   const dateFromRef = useRef(dateFrom)
@@ -111,33 +134,23 @@ function Home() {
   const refreshCounts = useCallback(() => {
     getHiddenCount()
       .then((r) => setHiddenCount(r.count))
-      .catch(() => {})
+      .catch(() => toast.error('Failed to fetch hidden count'))
     getFavoritesCount()
       .then((r) => setFavoritesCount(r.count))
-      .catch(() => {})
+      .catch(() => toast.error('Failed to fetch favorites count'))
     getHiddenDialogCount()
       .then((r) => setHiddenDialogCount(r.count))
-      .catch(() => {})
+      .catch(() => toast.error('Failed to fetch hidden dialog count'))
   }, [])
   // #endregion
 
   // #region Sync polling
-  const onSyncComplete = useCallback(
-    (params: {
-      groups: number[]
-      type?: string
-      dateFrom?: string
-      dateTo?: string
-    }) => {
-      media.reset()
-      media.fetchMedia({ ...params, reset: true })
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  )
+  const onSyncComplete = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['media'] })
+  }, [queryClient])
 
   const { syncing, syncStatuses, handleSync } = useSyncPolling({
-    activeGroupIdsRef,
+    displayGroupIdsRef,
     mediaTypeFilterRef,
     dateFromRef,
     dateToRef,
@@ -167,47 +180,7 @@ function Home() {
     if (authenticated) refreshCounts()
   }, [authenticated, refreshCounts])
 
-  useEffect(() => {
-    if (!authenticated) return
-    media.reset()
-    media.fetchMedia({
-      groups: activeGroupIds,
-      type: mediaTypeFilter ?? undefined,
-      dateFrom,
-      dateTo,
-      reset: true,
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    authenticated,
-    activeGroupIds,
-    mediaTypeFilter,
-    dateFrom,
-    dateTo,
-    media.reset,
-    media.fetchMedia,
-  ])
-
-  useEffect(() => {
-    if (viewMode === 'hidden' && authenticated) {
-      hidden.reset()
-      hidden.fetchHidden({ reset: true })
-    }
-    if (viewMode === 'favorites' && authenticated) {
-      favorites.reset()
-      favorites.fetchFavorites({ reset: true })
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    viewMode,
-    authenticated,
-    hidden.reset,
-    hidden.fetchHidden,
-    favorites.reset,
-    favorites.fetchFavorites,
-  ])
-
-  // Escape key — use refs to avoid re-attaching on every render
+  // Escape key
   const selectModeRef = useRef(selectMode)
   selectModeRef.current = selectMode
 
@@ -232,32 +205,15 @@ function Home() {
   const handleClear = async () => {
     try {
       await clearAllMedia()
-      media.reset()
-      media.fetchMedia({
-        groups: activeGroupIds,
-        type: mediaTypeFilter ?? undefined,
-        dateFrom,
-        dateTo,
-        reset: true,
-      })
+      queryClient.invalidateQueries({ queryKey: ['media'] })
+      toast.success('All media cleared')
     } catch {
-      /* clearAllMedia failure is non-critical */
+      toast.error('Failed to clear media')
     }
   }
 
   const handleLoadMore = () => {
-    if (viewMode === 'hidden') {
-      hidden.fetchHidden({})
-    } else if (viewMode === 'favorites') {
-      favorites.fetchFavorites({})
-    } else {
-      media.fetchMedia({
-        groups: activeGroupIds,
-        type: mediaTypeFilter ?? undefined,
-        dateFrom,
-        dateTo,
-      })
-    }
+    activeSource.fetchNextPage()
   }
 
   const handleItemClick = (item: MediaItem) => {
@@ -289,17 +245,12 @@ function Home() {
     try {
       await hideDialog(group.id)
     } catch {
+      toast.error('Failed to hide dialog')
       return
     }
+    toast.success(`${group.name} hidden`)
     refetchGroups()
-    media.reset()
-    media.fetchMedia({
-      groups: activeGroupIds.filter((id) => id !== group.id),
-      type: mediaTypeFilter ?? undefined,
-      dateFrom,
-      dateTo,
-      reset: true,
-    })
+    queryClient.invalidateQueries({ queryKey: ['media'] })
     refreshCounts()
   }
 
@@ -307,8 +258,10 @@ function Home() {
     try {
       await unhideDialog(group.id)
     } catch {
+      toast.error('Failed to unhide dialog')
       return
     }
+    toast.success(`${group.name} unhidden`)
     setHiddenDialogs((prev) => prev.filter((g) => g.id !== group.id))
     setHiddenDialogCount((prev) => Math.max(0, prev - 1))
     refetchGroups()
@@ -322,6 +275,7 @@ function Home() {
         const dialogs = await getHiddenDialogs()
         setHiddenDialogs(dialogs)
       } catch {
+        toast.error('Failed to load hidden dialogs')
         setHiddenDialogs([])
       }
     }
@@ -340,6 +294,8 @@ function Home() {
         onWidthChange={setSidebarWidth}
         groups={groups}
         onToggleGroup={toggleActive}
+        displayGroupIds={displayGroupIds}
+        onToggleDisplayFilter={toggleDisplayFilter}
         mediaTypeFilter={mediaTypeFilter}
         onMediaTypeFilter={setMediaTypeFilter}
         chatTypeFilter={chatTypeFilter}
@@ -364,16 +320,40 @@ function Home() {
         hiddenDialogCount={hiddenDialogCount}
       />
       <div className="relative flex flex-1 flex-col overflow-hidden">
-        {groups.some((g) => g.active) && (
-          <div className="flex justify-center border-b border-neutral-800 bg-neutral-900/80 px-4 py-2 backdrop-blur-sm">
+        {activeGroupIds.length > 0 && (
+          <div className="flex items-center justify-center gap-2 border-b border-neutral-800 bg-neutral-900/80 px-4 py-2 backdrop-blur-sm">
+            <span className="shrink-0 text-xs text-neutral-500">Syncing:</span>
             <div className="flex flex-wrap justify-center gap-1">
               {groups
                 .filter((g) => g.active)
                 .map((g) => (
                   <button
                     key={g.id}
-                    className="flex items-center gap-1 rounded-full bg-sky-600/20 px-2 py-0.5 text-xs text-sky-300 hover:bg-sky-600/30"
+                    className="flex items-center gap-1 rounded-full bg-emerald-600/20 px-2 py-0.5 text-xs text-emerald-300 hover:bg-emerald-600/30"
                     onClick={() => toggleActive(g)}
+                  >
+                    <span className="max-w-28 truncate">{g.name}</span>
+                    <span className="text-emerald-400/60 hover:text-emerald-300">
+                      ✕
+                    </span>
+                  </button>
+                ))}
+            </div>
+          </div>
+        )}
+        {displayGroupIds.size > 0 && (
+          <div className="flex items-center justify-center gap-2 border-b border-neutral-800 bg-neutral-900/80 px-4 py-2 backdrop-blur-sm">
+            <span className="shrink-0 text-xs text-neutral-500">
+              Showing only:
+            </span>
+            <div className="flex flex-wrap justify-center gap-1">
+              {groups
+                .filter((g) => displayGroupIds.has(g.id))
+                .map((g) => (
+                  <button
+                    key={g.id}
+                    className="flex items-center gap-1 rounded-full bg-sky-600/20 px-2 py-0.5 text-xs text-sky-300 hover:bg-sky-600/30"
+                    onClick={() => toggleDisplayFilter(g.id)}
                   >
                     <span className="max-w-28 truncate">{g.name}</span>
                     <span className="text-sky-400/60 hover:text-sky-300">
@@ -382,6 +362,12 @@ function Home() {
                   </button>
                 ))}
             </div>
+            <button
+              className="shrink-0 text-xs text-neutral-500 hover:text-neutral-300"
+              onClick={clearDisplayFilter}
+            >
+              Show all
+            </button>
           </div>
         )}
         <MediaGrid

@@ -1,25 +1,17 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { startSyncAll, getSyncStatus } from '#/api/client'
-import type { SyncStatus } from '#/api/types'
+import type { SyncStatus } from '#/api/schemas'
 
 interface SyncPollingOptions {
-  activeGroupIdsRef: React.RefObject<number[]>
+  displayGroupIdsRef: React.RefObject<number[]>
   mediaTypeFilterRef: React.RefObject<string | null>
   dateFromRef: React.RefObject<string | undefined>
   dateToRef: React.RefObject<string | undefined>
-  onSyncComplete: (params: {
-    groups: number[]
-    type?: string
-    dateFrom?: string
-    dateTo?: string
-  }) => void
+  onSyncComplete: () => void
 }
 
 export function useSyncPolling({
-  activeGroupIdsRef,
-  mediaTypeFilterRef,
-  dateFromRef,
-  dateToRef,
+  displayGroupIdsRef,
   onSyncComplete,
 }: SyncPollingOptions) {
   const [syncing, setSyncing] = useState(false)
@@ -50,14 +42,18 @@ export function useSyncPolling({
 
       stopPolling()
       pollRef.current = setInterval(async () => {
-        const currentIds = activeGroupIdsRef.current
+        const currentIds = displayGroupIdsRef.current
         const statuses: Record<number, SyncStatus> = {}
         await Promise.all(
           currentIds.map(async (gid) => {
             try {
               statuses[gid] = await getSyncStatus(gid)
             } catch {
-              statuses[gid] = { status: 'error', progress: 0, total: 0 }
+              statuses[gid] = {
+                status: 'error',
+                progress: 0,
+                total: 0,
+              }
             }
           }),
         )
@@ -71,23 +67,11 @@ export function useSyncPolling({
         if (allDone) {
           stopPolling()
           setSyncing(false)
-          onSyncComplete({
-            groups: activeGroupIdsRef.current,
-            type: mediaTypeFilterRef.current ?? undefined,
-            dateFrom: dateFromRef.current,
-            dateTo: dateToRef.current,
-          })
+          onSyncComplete()
         }
       }, 2000)
     },
-    [
-      stopPolling,
-      activeGroupIdsRef,
-      mediaTypeFilterRef,
-      dateFromRef,
-      dateToRef,
-      onSyncComplete,
-    ],
+    [stopPolling, displayGroupIdsRef, onSyncComplete],
   )
 
   return { syncing, syncStatuses, handleSync, stopPolling }

@@ -16,6 +16,7 @@
 
 - **Framework**: TanStack Start (React 19, SSR)
 - **Router**: TanStack Router (file-based routing in `src/routes/`)
+- **Data Fetching**: TanStack Query (`useQuery`, `useInfiniteQuery` for cursor pagination)
 - **Styling**: Tailwind CSS v4
 - **Testing**: Vitest + React Testing Library
 - **Build**: Vite 7

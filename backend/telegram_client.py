@@ -13,13 +13,22 @@ logger = logging.getLogger(__name__)
 
 
 class TelegramClientWrapper:
-    def __init__(self, api_id: int, api_hash: str, session_path: str = "tg_session"):
+    def __init__(
+        self,
+        api_id: int,
+        api_hash: str,
+        session_path: str = "tg_session",
+        background_tasks: set[asyncio.Task] | None = None,
+    ):
         self._client = TelegramClient(session_path, api_id, api_hash)
-        self._semaphore = asyncio.Semaphore(3)  # limit concurrent Telegram requests
+        self._semaphore = asyncio.Semaphore(6)  # limit concurrent Telegram requests
         self._dialogs_cache: list[dict] | None = None
         self._dialogs_cache_time: float = 0
         self._refreshing = False
         self._db = None
+        self._background_tasks: set[asyncio.Task] = (
+            background_tasks if background_tasks is not None else set()
+        )
 
     @property
     def client(self) -> TelegramClient:
@@ -33,7 +42,7 @@ class TelegramClientWrapper:
             await self._client.connect()
         # Kick off initial dialog refresh in background if DB is available
         if self._db is not None:
-            fire_and_forget(self.refresh_dialogs())
+            fire_and_forget(self.refresh_dialogs(), self._background_tasks)
 
     async def disconnect(self) -> None:
         await self._client.disconnect()
@@ -67,7 +76,7 @@ class TelegramClientWrapper:
             return self._dialogs_cache
         # Cache is stale — trigger background refresh (non-blocking)
         if self._db is not None:
-            fire_and_forget(self.refresh_dialogs())
+            fire_and_forget(self.refresh_dialogs(), self._background_tasks)
         # If we have stale cache, return it immediately while refresh runs
         if self._dialogs_cache is not None:
             return self._dialogs_cache

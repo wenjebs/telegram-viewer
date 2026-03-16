@@ -1,11 +1,20 @@
 import {
   HeadContent,
   Link,
+  Outlet,
   Scripts,
   createRootRoute,
 } from '@tanstack/react-router'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
+import { Toaster } from 'sonner'
 import appCss from '#/styles.css?url'
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: { staleTime: Infinity, refetchOnWindowFocus: false },
+  },
+})
 
 export const Route = createRootRoute({
   head: () => ({
@@ -16,9 +25,19 @@ export const Route = createRootRoute({
     ],
     links: [{ rel: 'stylesheet', href: appCss }],
   }),
+  component: RootComponent,
   shellComponent: RootDocument,
   notFoundComponent: NotFound,
 })
+
+function RootComponent() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <Outlet />
+      <Toaster theme="dark" position="bottom-right" richColors />
+    </QueryClientProvider>
+  )
+}
 
 function NotFound() {
   return (

@@ -1,47 +1,80 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
-import type { Group } from '#/api/types'
+import { useState, useCallback, useMemo, useEffect } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import type { Group } from '#/api/schemas'
 import { getGroups, toggleGroupActive } from '#/api/client'
 
 export function useGroups(enabled = true) {
-  const [groups, setGroups] = useState<Group[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const queryClient = useQueryClient()
+  const [displayGroupIds, setDisplayGroupIds] = useState<Set<number>>(new Set())
 
-  const fetchGroups = useCallback(async () => {
-    setLoading(true)
-    try {
-      const data = await getGroups()
-      setGroups(data)
-      setError(null)
-    } catch (err) {
-      setError(String(err))
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+  const {
+    data: groups = [],
+    isLoading: loading,
+    error,
+    refetch,
+  } = useQuery({
+    queryKey: ['groups'],
+    queryFn: getGroups,
+    enabled,
+  })
 
-  useEffect(() => {
-    if (enabled) fetchGroups()
-  }, [enabled, fetchGroups])
-
-  const toggleActive = useCallback(async (group: Group) => {
-    await toggleGroupActive(group.id, !group.active, group.name)
-    setGroups((prev) =>
-      prev.map((g) => (g.id === group.id ? { ...g, active: !g.active } : g)),
-    )
-  }, [])
+  const toggleActive = useCallback(
+    async (group: Group) => {
+      await toggleGroupActive(group.id, !group.active, group.name)
+      queryClient.setQueryData<Group[]>(['groups'], (prev) =>
+        prev?.map((g) => (g.id === group.id ? { ...g, active: !g.active } : g)),
+      )
+    },
+    [queryClient],
+  )
 
   const activeGroupIds = useMemo(
     () => groups.filter((g) => g.active).map((g) => g.id),
     [groups],
   )
 
+  useEffect(() => {
+    setDisplayGroupIds((prev) => {
+      const activeSet = new Set(activeGroupIds)
+      const next = new Set([...prev].filter((id) => activeSet.has(id)))
+      return next.size === prev.size ? prev : next
+    })
+  }, [activeGroupIds])
+
+  const toggleDisplayFilter = useCallback((groupId: number) => {
+    setDisplayGroupIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(groupId)) {
+        next.delete(groupId)
+      } else {
+        next.add(groupId)
+      }
+      return next
+    })
+  }, [])
+
+  const clearDisplayFilter = useCallback(() => {
+    setDisplayGroupIds(new Set())
+  }, [])
+
+  const displayFilteredGroupIds = useMemo(
+    () =>
+      displayGroupIds.size === 0
+        ? activeGroupIds
+        : activeGroupIds.filter((id) => displayGroupIds.has(id)),
+    [activeGroupIds, displayGroupIds],
+  )
+
   return {
     groups,
     loading,
-    error,
+    error: error ? String(error) : null,
     toggleActive,
     activeGroupIds,
-    refetch: fetchGroups,
+    displayGroupIds,
+    displayFilteredGroupIds,
+    toggleDisplayFilter,
+    clearDisplayFilter,
+    refetch,
   }
 }

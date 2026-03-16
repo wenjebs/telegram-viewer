@@ -9,7 +9,7 @@ import zipfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from starlette.background import BackgroundTask
@@ -29,6 +29,7 @@ from database import (
     get_favorites_media_page,
     get_favorites_count,
 )
+from deps import get_db, get_tg
 
 if TYPE_CHECKING:
     import aiosqlite
@@ -39,43 +40,43 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/media", tags=["media"])
 
-_db: aiosqlite.Connection | None = None
-_tg: TelegramClientWrapper | None = None
 CACHE_DIR = Path(__file__).parent.parent / "cache"
 
 
-# region Module state
-def set_db(db: aiosqlite.Connection) -> None:
-    global _db
-    _db = db
-
-
-def get_db() -> aiosqlite.Connection:
-    assert _db is not None, "Database not initialized"
-    return _db
-
-
-def set_tg(tg: TelegramClientWrapper) -> None:
-    global _tg
-    _tg = tg
-
-
-def get_tg() -> TelegramClientWrapper:
-    assert _tg is not None, "Telegram client not initialized"
-    return _tg
-
-
-# endregion
-
-
 # region Helpers
-def _build_media_response(items: list[dict], limit: int) -> dict:
+def _parse_cursor(cursor: str | None) -> tuple[int | None, str | None]:
+    """Parse a cursor string into (cursor_id, cursor_value).
+
+    Supports composite cursors ("value|id") and plain id cursors ("123").
+    Raises HTTPException 400 on malformed input.
+    """
+    if cursor is None:
+        return None, None
+    try:
+        if "|" in cursor:
+            value, cid = cursor.rsplit("|", 1)
+            return int(cid), value
+        return int(cursor), None
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid cursor")
+
+
+def _build_media_response(
+    items: list[dict],
+    limit: int,
+    *,
+    cursor_column: str = "date",
+) -> dict:
     """Normalize dates, strip non-serializable fields, and compute next_cursor."""
     for item in items:
         if " " in item["date"]:
             item["date"] = item["date"].replace(" ", "T", 1)
         item.pop("file_ref", None)
-    next_cursor = items[-1]["id"] if len(items) == limit else None
+    if not items or len(items) < limit:
+        next_cursor = None
+    else:
+        last = items[-1]
+        next_cursor = f"{last[cursor_column]}|{last['id']}"
     return {"items": items, "next_cursor": next_cursor}
 
 
@@ -85,25 +86,27 @@ def _build_media_response(items: list[dict], limit: int) -> dict:
 # region List / Download zip
 @router.get("")
 async def list_media(
-    cursor: int | None = Query(None),
+    db: aiosqlite.Connection = Depends(get_db),
+    cursor: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
     groups: str | None = Query(None),
     type: str | None = Query(None),
     date_from: str | None = Query(None),
     date_to: str | None = Query(None),
 ):
-    db = get_db()
+    cursor_id, cursor_value = _parse_cursor(cursor)
     group_ids = [int(g) for g in groups.split(",")] if groups else None
     items = await get_media_page(
         db,
-        cursor_id=cursor,
+        cursor_id=cursor_id,
+        cursor_value=cursor_value,
         limit=limit,
         group_ids=group_ids,
         media_type=type,
         date_from=date_from,
         date_to=date_to,
     )
-    return _build_media_response(items, limit)
+    return _build_media_response(items, limit, cursor_column="date")
 
 
 class DownloadZipRequest(BaseModel):
@@ -111,21 +114,23 @@ class DownloadZipRequest(BaseModel):
 
 
 @router.post("/download-zip")
-async def download_zip(body: DownloadZipRequest):
+async def download_zip(
+    body: DownloadZipRequest,
+    db: aiosqlite.Connection = Depends(get_db),
+    tg: TelegramClientWrapper = Depends(get_tg),
+):
     unique_ids = list(set(body.media_ids))
     if len(unique_ids) > 200:
         raise HTTPException(status_code=400, detail="Maximum 200 items per zip")
     if not unique_ids:
         raise HTTPException(status_code=400, detail="No media IDs provided")
 
-    db = get_db()
     items = await get_media_by_ids(db, unique_ids)
     if len(items) != len(unique_ids):
         found_ids = {item["id"] for item in items}
         missing = [mid for mid in unique_ids if mid not in found_ids]
         raise HTTPException(status_code=404, detail=f"Media not found: {missing}")
 
-    tg = get_tg()
     await asyncio.to_thread(CACHE_DIR.mkdir, parents=True, exist_ok=True)
 
     # Ensure all files are cached locally
@@ -190,62 +195,80 @@ UnhideBatchRequest = BatchIdsRequest
 
 @router.get("/hidden")
 async def list_hidden_media(
-    cursor: int | None = Query(None),
+    db: aiosqlite.Connection = Depends(get_db),
+    cursor: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
 ):
-    db = get_db()
-    items = await get_hidden_media_page(db, cursor_id=cursor, limit=limit)
-    return _build_media_response(items, limit)
+    cursor_id, cursor_value = _parse_cursor(cursor)
+    items = await get_hidden_media_page(
+        db,
+        cursor_id=cursor_id,
+        cursor_value=cursor_value,
+        limit=limit,
+    )
+    return _build_media_response(items, limit, cursor_column="hidden_at")
 
 
 @router.get("/hidden/count")
-async def hidden_media_count():
-    db = get_db()
+async def hidden_media_count(db: aiosqlite.Connection = Depends(get_db)):
     count = await get_hidden_count(db)
     return {"count": count}
 
 
 @router.post("/unhide-batch")
-async def unhide_media_batch(body: UnhideBatchRequest):
-    db = get_db()
+async def unhide_media_batch(
+    body: UnhideBatchRequest,
+    db: aiosqlite.Connection = Depends(get_db),
+):
     await unhide_media_items(db, body.validated_ids)
     return {"success": True}
 
 
 @router.post("/hide-batch")
-async def hide_media_batch(body: BatchIdsRequest):
-    db = get_db()
+async def hide_media_batch(
+    body: BatchIdsRequest,
+    db: aiosqlite.Connection = Depends(get_db),
+):
     await hide_media_items(db, body.validated_ids)
     return {"success": True}
 
 
 @router.post("/favorite-batch")
-async def favorite_media_batch(body: BatchIdsRequest):
-    db = get_db()
+async def favorite_media_batch(
+    body: BatchIdsRequest,
+    db: aiosqlite.Connection = Depends(get_db),
+):
     await favorite_media_items(db, body.validated_ids)
     return {"success": True}
 
 
 @router.get("/favorites")
 async def list_favorites_media(
-    cursor: int | None = Query(None),
+    db: aiosqlite.Connection = Depends(get_db),
+    cursor: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
 ):
-    db = get_db()
-    items = await get_favorites_media_page(db, cursor_id=cursor, limit=limit)
-    return _build_media_response(items, limit)
+    cursor_id, cursor_value = _parse_cursor(cursor)
+    items = await get_favorites_media_page(
+        db,
+        cursor_id=cursor_id,
+        cursor_value=cursor_value,
+        limit=limit,
+    )
+    return _build_media_response(items, limit, cursor_column="favorited_at")
 
 
 @router.get("/favorites/count")
-async def favorites_media_count():
-    db = get_db()
+async def favorites_media_count(db: aiosqlite.Connection = Depends(get_db)):
     count = await get_favorites_count(db)
     return {"count": count}
 
 
 @router.post("/{media_id}/favorite")
-async def favorite_media(media_id: int):
-    db = get_db()
+async def favorite_media(
+    media_id: int,
+    db: aiosqlite.Connection = Depends(get_db),
+):
     item = await get_media_by_id(db, media_id)
     if not item:
         raise HTTPException(status_code=404, detail="Media not found")
@@ -257,8 +280,10 @@ async def favorite_media(media_id: int):
 
 
 @router.post("/{media_id}/hide")
-async def hide_media(media_id: int):
-    db = get_db()
+async def hide_media(
+    media_id: int,
+    db: aiosqlite.Connection = Depends(get_db),
+):
     item = await get_media_by_id(db, media_id)
     if not item:
         raise HTTPException(status_code=404, detail="Media not found")
@@ -267,8 +292,10 @@ async def hide_media(media_id: int):
 
 
 @router.post("/{media_id}/unhide")
-async def unhide_media(media_id: int):
-    db = get_db()
+async def unhide_media(
+    media_id: int,
+    db: aiosqlite.Connection = Depends(get_db),
+):
     item = await get_media_by_id(db, media_id)
     if not item:
         raise HTTPException(status_code=404, detail="Media not found")
@@ -281,8 +308,11 @@ async def unhide_media(media_id: int):
 
 # region Thumbnail / Download / Telegram helpers
 @router.get("/{media_id}/thumbnail")
-async def get_thumbnail(media_id: int):
-    db = get_db()
+async def get_thumbnail(
+    media_id: int,
+    db: aiosqlite.Connection = Depends(get_db),
+    tg: TelegramClientWrapper = Depends(get_tg),
+):
     item = await get_media_by_id(db, media_id)
     if not item:
         raise HTTPException(status_code=404, detail="Media not found")
@@ -298,7 +328,6 @@ async def get_thumbnail(media_id: int):
         )
 
     # Download from Telegram
-    tg = get_tg()
     try:
         thumb_bytes = await _download_thumbnail(tg, item)
     except Exception:
@@ -325,8 +354,11 @@ async def get_thumbnail(media_id: int):
 
 
 @router.get("/{media_id}/download")
-async def download_media(media_id: int):
-    db = get_db()
+async def download_media(
+    media_id: int,
+    db: aiosqlite.Connection = Depends(get_db),
+    tg: TelegramClientWrapper = Depends(get_tg),
+):
     item = await get_media_by_id(db, media_id)
     if not item:
         raise HTTPException(status_code=404, detail="Media not found")
@@ -340,7 +372,6 @@ async def download_media(media_id: int):
             item["download_path"], media_type=mime, headers=cache_headers
         )
 
-    tg = get_tg()
     try:
         data = await _download_full(tg, item)
     except HTTPException:

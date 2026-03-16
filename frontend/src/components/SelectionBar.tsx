@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { toast } from 'sonner'
 import {
   downloadZip,
   unhideMediaBatch,
@@ -35,13 +36,11 @@ export default function SelectionBar({
   const [unhiding, setUnhiding] = useState(false)
   const [hiding, setHiding] = useState(false)
   const [favoriting, setFavoriting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
   // #region Actions
   const handleDownload = async () => {
     if (selectedCount === 0 || downloading) return
     setDownloading(true)
-    setError(null)
     try {
       const blob = await downloadZip([...selectedIds])
       const url = URL.createObjectURL(blob)
@@ -52,7 +51,7 @@ export default function SelectionBar({
       URL.revokeObjectURL(url)
       onDownload()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Download failed')
+      toast.error(err instanceof Error ? err.message : 'Download failed')
     } finally {
       setDownloading(false)
     }
@@ -61,12 +60,12 @@ export default function SelectionBar({
   const handleUnhide = async () => {
     if (selectedCount === 0 || unhiding) return
     setUnhiding(true)
-    setError(null)
     try {
       await unhideMediaBatch([...selectedIds])
+      toast.success(`${selectedCount} items unhidden`)
       onUnhide?.()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unhide failed')
+      toast.error(err instanceof Error ? err.message : 'Unhide failed')
     } finally {
       setUnhiding(false)
     }
@@ -75,12 +74,12 @@ export default function SelectionBar({
   const handleHide = async () => {
     if (selectedCount === 0 || hiding) return
     setHiding(true)
-    setError(null)
     try {
       await hideMediaBatch([...selectedIds])
+      toast.success(`${selectedCount} items hidden`)
       onHide?.()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Hide failed')
+      toast.error(err instanceof Error ? err.message : 'Hide failed')
     } finally {
       setHiding(false)
     }
@@ -89,12 +88,11 @@ export default function SelectionBar({
   const handleFavorite = async () => {
     if (selectedCount === 0 || favoriting) return
     setFavoriting(true)
-    setError(null)
     try {
       await favoriteMediaBatch([...selectedIds])
       onFavorite?.()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Favorite failed')
+      toast.error(err instanceof Error ? err.message : 'Favorite failed')
     } finally {
       setFavoriting(false)
     }
@@ -220,9 +218,6 @@ export default function SelectionBar({
           ✕
         </button>
       </div>
-      {error && (
-        <div className="mt-2 text-center text-xs text-red-400">{error}</div>
-      )}
     </div>
   )
 }

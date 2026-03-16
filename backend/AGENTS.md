@@ -9,6 +9,7 @@
 ## Code Style
 
 - Use `ruff` for linting and formatting
+- Use `ty` for type checking
 - Python 3.12+
 
 ## Stack

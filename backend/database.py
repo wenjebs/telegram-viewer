@@ -29,6 +29,9 @@ CREATE TABLE IF NOT EXISTS media_items (
 CREATE INDEX IF NOT EXISTS idx_media_date ON media_items(date DESC);
 CREATE INDEX IF NOT EXISTS idx_media_chat ON media_items(chat_id);
 CREATE INDEX IF NOT EXISTS idx_media_type ON media_items(media_type);
+CREATE INDEX IF NOT EXISTS idx_media_hidden ON media_items(hidden_at);
+CREATE INDEX IF NOT EXISTS idx_media_favorited ON media_items(favorited_at);
+CREATE INDEX IF NOT EXISTS idx_media_chat_date ON media_items(chat_id, date DESC);
 
 CREATE TABLE IF NOT EXISTS sync_state (
     chat_id         INTEGER PRIMARY KEY,
@@ -61,6 +64,9 @@ async def init_db(db: aiosqlite.Connection) -> None:
         "ALTER TABLE media_items ADD COLUMN favorited_at DATETIME",
         "ALTER TABLE dialogs ADD COLUMN hidden_at DATETIME",
         "ALTER TABLE media_items ADD COLUMN sender_name TEXT",
+        "CREATE INDEX IF NOT EXISTS idx_media_hidden ON media_items(hidden_at)",
+        "CREATE INDEX IF NOT EXISTS idx_media_favorited ON media_items(favorited_at)",
+        "CREATE INDEX IF NOT EXISTS idx_media_chat_date ON media_items(chat_id, date DESC)",
     ]:
         try:
             await db.execute(migration)
@@ -127,13 +133,28 @@ async def _paginate_media(
     conditions: list[str],
     params: dict,
     cursor_id: int | None = None,
+    cursor_value: str | None = None,
+    cursor_column: str = "date",
     limit: int = 50,
     order_by: str = "id DESC",
 ) -> list[dict]:
-    """Shared cursor-based pagination for media queries."""
+    """Shared cursor-based pagination for media queries.
+
+    When cursor_value is provided alongside cursor_id, uses composite
+    keyset pagination: (cursor_column, id) < (cursor_value, cursor_id).
+    Otherwise falls back to simple id-based pagination.
+    """
     params["limit"] = limit
     if cursor_id is not None:
-        conditions.append("id < :cursor_id")
+        if cursor_value is not None:
+            col = cursor_column
+            conditions.append(
+                f"({col} < :cursor_value"
+                f" OR ({col} = :cursor_value AND id < :cursor_id))"
+            )
+            params["cursor_value"] = cursor_value
+        else:
+            conditions.append("id < :cursor_id")
         params["cursor_id"] = cursor_id
 
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
@@ -147,6 +168,7 @@ async def _paginate_media(
 async def get_media_page(
     db: aiosqlite.Connection,
     cursor_id: int | None = None,
+    cursor_value: str | None = None,
     limit: int = 50,
     group_ids: list[int] | None = None,
     media_type: str | None = None,
@@ -180,7 +202,16 @@ async def get_media_page(
         conditions.append("date < :date_to_exclusive")
         params["date_to_exclusive"] = date_to_exclusive
 
-    return await _paginate_media(db, conditions, params, cursor_id, limit)
+    return await _paginate_media(
+        db,
+        conditions,
+        params,
+        cursor_id=cursor_id,
+        cursor_value=cursor_value,
+        cursor_column="date",
+        limit=limit,
+        order_by="date DESC, id DESC",
+    )
 
 
 # endregion
@@ -335,14 +366,17 @@ async def unhide_media_items(db: aiosqlite.Connection, media_ids: list[int]) -> 
 async def get_hidden_media_page(
     db: aiosqlite.Connection,
     cursor_id: int | None = None,
+    cursor_value: str | None = None,
     limit: int = 50,
 ) -> list[dict]:
     return await _paginate_media(
         db,
         ["hidden_at IS NOT NULL"],
         {},
-        cursor_id,
-        limit,
+        cursor_id=cursor_id,
+        cursor_value=cursor_value,
+        cursor_column="hidden_at",
+        limit=limit,
         order_by="hidden_at DESC, id DESC",
     )
 
@@ -417,14 +451,17 @@ async def unfavorite_media_item(db: aiosqlite.Connection, media_id: int) -> None
 async def get_favorites_media_page(
     db: aiosqlite.Connection,
     cursor_id: int | None = None,
+    cursor_value: str | None = None,
     limit: int = 50,
 ) -> list[dict]:
     return await _paginate_media(
         db,
         ["favorited_at IS NOT NULL"],
         {},
-        cursor_id,
-        limit,
+        cursor_id=cursor_id,
+        cursor_value=cursor_value,
+        cursor_column="favorited_at",
+        limit=limit,
         order_by="favorited_at DESC, id DESC",
     )
 

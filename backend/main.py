@@ -10,19 +10,10 @@ from fastapi.responses import JSONResponse
 from telethon.errors import AuthKeyError
 
 from database import init_db
-from routes.auth import router as auth_router, set_tg
-from routes.groups import (
-    router as groups_router,
-    set_tg as set_groups_tg,
-    set_db as set_groups_db,
-)
-from routes.media import (
-    router as media_router,
-    set_tg as set_media_tg,
-    set_db as set_media_db,
-)
+from routes.auth import router as auth_router
+from routes.groups import router as groups_router
+from routes.media import router as media_router
 from telegram_client import TelegramClientWrapper
-from utils import _background_tasks
 
 load_dotenv()
 
@@ -34,29 +25,32 @@ async def lifespan(app: FastAPI):
     api_id = int(os.getenv("TELEGRAM_API_ID", "0"))
     api_hash = os.getenv("TELEGRAM_API_HASH", "")
 
+    # Shared state
+    app.state.background_tasks = set()
+    app.state.sync_status = {}
+
     # Init database
     db = await aiosqlite.connect(DB_PATH)
     await init_db(db)
     app.state.db = db
 
     # Init Telegram client
-    tg = TelegramClientWrapper(api_id=api_id, api_hash=api_hash)
+    tg = TelegramClientWrapper(
+        api_id=api_id,
+        api_hash=api_hash,
+        background_tasks=app.state.background_tasks,
+    )
     tg.set_db(db)
     await tg.connect()
     app.state.tg = tg
-    set_tg(tg)
-    set_groups_tg(tg)
-    set_groups_db(db)
-    set_media_tg(tg)
-    set_media_db(db)
 
     yield
 
     # Cancel all background tasks and wait for them to finish
-    for task in _background_tasks:
+    for task in app.state.background_tasks:
         task.cancel()
-    if _background_tasks:
-        await asyncio.gather(*_background_tasks, return_exceptions=True)
+    if app.state.background_tasks:
+        await asyncio.gather(*app.state.background_tasks, return_exceptions=True)
 
     await tg.disconnect()
     await db.close()
@@ -65,7 +59,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Telegram Media Viewer", lifespan=lifespan)
 
 app.add_middleware(
-    CORSMiddleware,
+    CORSMiddleware,  # type: ignore[arg-type]
     allow_origins=["http://localhost:3000"],
     allow_methods=["*"],
     allow_headers=["*"],

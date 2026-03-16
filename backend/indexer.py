@@ -50,21 +50,18 @@ async def index_chat(
     min_id = state["last_msg_id"] if state else 0
 
     # Get estimated totals upfront (single API call per filter, no messages fetched)
-    photo_total = (
-        await tg.client.get_messages(
-            chat_id, filter=InputMessagesFilterPhotos(), limit=0
-        )
-    ).total
-    video_total = (
-        await tg.client.get_messages(
-            chat_id, filter=InputMessagesFilterVideo(), limit=0
-        )
-    ).total
-    doc_total = (
-        await tg.client.get_messages(
-            chat_id, filter=InputMessagesFilterDocument(), limit=0
-        )
-    ).total
+    photo_result = await tg.client.get_messages(
+        chat_id, filter=InputMessagesFilterPhotos(), limit=0
+    )
+    video_result = await tg.client.get_messages(
+        chat_id, filter=InputMessagesFilterVideo(), limit=0
+    )
+    doc_result = await tg.client.get_messages(
+        chat_id, filter=InputMessagesFilterDocument(), limit=0
+    )
+    photo_total = getattr(photo_result, "total", 0) or 0
+    video_total = getattr(video_result, "total", 0) or 0
+    doc_total = getattr(doc_result, "total", 0) or 0
     total = photo_total + video_total + doc_total
 
     if total == 0:
@@ -247,8 +244,8 @@ async def _download_batch_thumbnails(
             return
         await tg.acquire_semaphore()
         try:
-            thumb_bytes = await tg.client.download_media(msg, bytes, thumb=-1)
-            if thumb_bytes:
+            thumb_bytes = await tg.client.download_media(msg, bytes, thumb=-1)  # type: ignore[arg-type]
+            if isinstance(thumb_bytes, bytes):
                 thumb_path.write_bytes(thumb_bytes)
                 item["thumbnail_path"] = str(thumb_path)
         except Exception:

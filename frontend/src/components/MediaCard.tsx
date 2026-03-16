@@ -1,6 +1,7 @@
 import { useRef, useCallback } from 'react'
-import type { MediaItem } from '#/api/types'
+import type { MediaItem } from '#/api/schemas'
 import { getThumbnailUrl } from '#/api/client'
+import { formatDuration } from '#/utils/format'
 
 interface Props {
   item: MediaItem
@@ -141,10 +142,4 @@ export default function MediaCard({
       )}
     </div>
   )
-}
-
-function formatDuration(seconds: number): string {
-  const m = Math.floor(seconds / 60)
-  const s = Math.floor(seconds % 60)
-  return `${m}:${s.toString().padStart(2, '0')}`
 }

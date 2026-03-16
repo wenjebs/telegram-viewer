@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from 'react'
+import { toast } from 'sonner'
 import { hideMedia, unhideMedia, toggleFavorite } from '#/api/client'
-import type { MediaItem } from '#/api/types'
+import type { MediaItem } from '#/api/schemas'
 
 interface LightboxOptions {
   activeItems: MediaItem[]
@@ -63,7 +64,8 @@ export function useLightbox({
 
     try {
       await hideMedia(selectedItem.id)
-    } catch {
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to hide')
       return
     }
 
@@ -86,7 +88,8 @@ export function useLightbox({
 
     try {
       await unhideMedia(selectedItem.id)
-    } catch {
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to unhide')
       return
     }
 
@@ -116,8 +119,10 @@ export function useLightbox({
           : null,
       )
       refreshCounts()
-    } catch {
-      // ignore
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : 'Failed to update favorite',
+      )
     }
   }, [selectedItem, refreshCounts])
 

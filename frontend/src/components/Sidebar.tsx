@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import Fuse from 'fuse.js'
 import type { DateRange } from 'react-day-picker'
-import type { Group, SyncStatus } from '#/api/types'
+import type { Group, SyncStatus } from '#/api/schemas'
 import DateRangeFilter from './DateRangeFilter'
 
 interface Props {
@@ -9,6 +9,8 @@ interface Props {
   onWidthChange: (width: number) => void
   groups: Group[]
   onToggleGroup: (group: Group) => void
+  displayGroupIds: Set<number>
+  onToggleDisplayFilter: (groupId: number) => void
   mediaTypeFilter: string | null
   onMediaTypeFilter: (type: string | null) => void
   chatTypeFilter: string | null
@@ -60,6 +62,8 @@ export default function Sidebar({
   onWidthChange,
   groups,
   onToggleGroup,
+  displayGroupIds,
+  onToggleDisplayFilter,
   mediaTypeFilter,
   onMediaTypeFilter,
   chatTypeFilter,
@@ -243,7 +247,7 @@ export default function Sidebar({
                   </div>
                 ))
               : filteredGroups.map((g) => (
-                  <label
+                  <div
                     key={g.id}
                     className="group flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-neutral-800"
                   >
@@ -256,7 +260,22 @@ export default function Sidebar({
                     {g.type && CHAT_TYPE_ICONS[g.type] && (
                       <span className="text-xs">{CHAT_TYPE_ICONS[g.type]}</span>
                     )}
-                    <span className="flex-1 truncate">{g.name}</span>
+                    <button
+                      className={`flex-1 truncate text-left ${
+                        displayGroupIds.has(g.id)
+                          ? 'font-medium text-sky-300'
+                          : ''
+                      } disabled:cursor-default disabled:opacity-50`}
+                      onClick={() => onToggleDisplayFilter(g.id)}
+                      disabled={!g.active}
+                      title={
+                        g.active
+                          ? 'Filter gallery to this chat'
+                          : 'Activate to filter'
+                      }
+                    >
+                      {g.name}
+                    </button>
                     {syncStatuses[g.id]?.status === 'syncing' &&
                       syncStatuses[g.id].total > 0 && (
                         <span className="ml-auto shrink-0 text-xs text-sky-400">
@@ -287,7 +306,7 @@ export default function Sidebar({
                         </svg>
                       </button>
                     )}
-                  </label>
+                  </div>
                 ))}
           </div>
         </>

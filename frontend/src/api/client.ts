@@ -1,9 +1,16 @@
-import type { AuthStatus, Group, MediaPage, SyncStatus } from './types'
+import { z, ZodError } from 'zod'
+import {
+  AuthStatus,
+  CountResponse,
+  Group,
+  MediaPage,
+  SuccessResponse,
+  SyncStatus,
+} from './schemas'
 
 const BASE = '/api'
 
-async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T> {
-  const resp = await fetch(`${BASE}${path}`, init)
+async function ensureOk(resp: Response): Promise<void> {
   if (!resp.ok) {
     let detail = `${resp.status} ${resp.statusText}`
     try {
@@ -12,14 +19,32 @@ async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {}
     throw new Error(detail)
   }
-  return resp.json()
+}
+
+async function fetchJSON<T>(
+  path: string,
+  schema: z.ZodType<T>,
+  init?: RequestInit,
+): Promise<T> {
+  const resp = await fetch(`${BASE}${path}`, init)
+  await ensureOk(resp)
+  const data = await resp.json()
+  try {
+    return schema.parse(data)
+  } catch (e) {
+    if (e instanceof ZodError) {
+      console.error('API validation failed:', path, e.issues)
+      throw new Error(`Unexpected API response from ${path}`, { cause: e })
+    }
+    throw e
+  }
 }
 
 // Auth
-export const getAuthStatus = () => fetchJSON<AuthStatus>('/auth/status')
+export const getAuthStatus = () => fetchJSON('/auth/status', AuthStatus)
 
 export const sendCode = (phone: string) =>
-  fetchJSON<{ phone_code_hash: string }>('/auth/send-code', {
+  fetchJSON('/auth/send-code', z.object({ phone_code_hash: z.string() }), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ phone }),
@@ -31,69 +56,72 @@ export const verifyCode = (
   phone_code_hash: string,
   password?: string,
 ) =>
-  fetchJSON<{ success: boolean }>('/auth/verify', {
+  fetchJSON('/auth/verify', SuccessResponse, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ phone, code, phone_code_hash, password }),
   })
 
 export const logout = () =>
-  fetchJSON<{ success: boolean }>('/auth/logout', { method: 'POST' })
+  fetchJSON('/auth/logout', SuccessResponse, { method: 'POST' })
 
 // Groups
-export const getGroups = () => fetchJSON<Group[]>('/groups')
+export const getGroups = () => fetchJSON('/groups', z.array(Group))
 
 export const toggleGroupActive = (
   chatId: number,
   active: boolean,
   chatName: string,
 ) =>
-  fetchJSON<{ success: boolean }>(`/groups/${chatId}/active`, {
+  fetchJSON(`/groups/${chatId}/active`, SuccessResponse, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ active, chat_name: chatName }),
   })
 
 export const startSyncAll = (chatIds: number[]) =>
-  fetchJSON<{ started: number[] }>('/groups/sync-all', {
+  fetchJSON('/groups/sync-all', z.object({ started: z.array(z.number()) }), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ chat_ids: chatIds }),
   })
 
 export const clearGroupMedia = (chatId: number) =>
-  fetchJSON<{ success: boolean }>(`/groups/${chatId}/media`, {
+  fetchJSON(`/groups/${chatId}/media`, SuccessResponse, {
     method: 'DELETE',
   })
 
 export const clearAllMedia = () =>
-  fetchJSON<{ success: boolean }>('/groups/media', {
+  fetchJSON('/groups/media', SuccessResponse, {
     method: 'DELETE',
   })
 
 export const getSyncStatus = (chatId: number) =>
-  fetchJSON<SyncStatus>(`/groups/${chatId}/sync-status`)
+  fetchJSON(`/groups/${chatId}/sync-status`, SyncStatus)
 
 // Hidden dialogs
 export const hideDialog = (chatId: number) =>
-  fetchJSON<{ success: boolean }>(`/groups/${chatId}/hide`, { method: 'POST' })
+  fetchJSON(`/groups/${chatId}/hide`, SuccessResponse, {
+    method: 'POST',
+  })
 
 export const unhideDialog = (chatId: number) =>
-  fetchJSON<{ success: boolean }>(`/groups/${chatId}/unhide`, {
+  fetchJSON(`/groups/${chatId}/unhide`, SuccessResponse, {
     method: 'POST',
   })
 
 export const unhideDialogBatch = (dialogIds: number[]) =>
-  fetchJSON<{ success: boolean }>('/groups/unhide-batch', {
+  fetchJSON('/groups/unhide-batch', SuccessResponse, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ dialog_ids: dialogIds }),
   })
 
-export const getHiddenDialogs = () => fetchJSON<Group[]>('/groups/hidden')
+export const getHiddenDialogs = () =>
+  fetchJSON('/groups/hidden', z.array(Group))
 
 export const getHiddenDialogCount = () =>
-  fetchJSON<{ count: number }>('/groups/hidden/count')
+  fetchJSON('/groups/hidden/count', CountResponse)
 
 // Helpers
 function buildSearchParams(
@@ -113,7 +141,7 @@ function buildSearchParams(
 
 // Media
 export const getMedia = (params: {
-  cursor?: number
+  cursor?: string
   limit?: number
   groups?: number[]
   type?: string
@@ -128,7 +156,7 @@ export const getMedia = (params: {
     date_from: params.dateFrom,
     date_to: params.dateTo,
   })
-  return fetchJSON<MediaPage>(`/media?${sp}`)
+  return fetchJSON(`/media?${sp}`, MediaPage)
 }
 
 export const getThumbnailUrl = (mediaId: number) =>
@@ -139,67 +167,68 @@ export const getDownloadUrl = (mediaId: number) =>
 
 // Hidden
 export const hideMedia = (mediaId: number) =>
-  fetchJSON<{ success: boolean }>(`/media/${mediaId}/hide`, {
+  fetchJSON(`/media/${mediaId}/hide`, SuccessResponse, {
     method: 'POST',
   })
 
 export const unhideMedia = (mediaId: number) =>
-  fetchJSON<{ success: boolean }>(`/media/${mediaId}/unhide`, {
+  fetchJSON(`/media/${mediaId}/unhide`, SuccessResponse, {
     method: 'POST',
   })
 
 export const unhideMediaBatch = (mediaIds: number[]) =>
-  fetchJSON<{ success: boolean }>('/media/unhide-batch', {
+  fetchJSON('/media/unhide-batch', SuccessResponse, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ media_ids: mediaIds }),
   })
 
 export const hideMediaBatch = (mediaIds: number[]) =>
-  fetchJSON<{ success: boolean }>('/media/hide-batch', {
+  fetchJSON('/media/hide-batch', SuccessResponse, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ media_ids: mediaIds }),
   })
 
 export const favoriteMediaBatch = (mediaIds: number[]) =>
-  fetchJSON<{ success: boolean }>('/media/favorite-batch', {
+  fetchJSON('/media/favorite-batch', SuccessResponse, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ media_ids: mediaIds }),
   })
 
-export const getHiddenMedia = (params: { cursor?: number; limit?: number }) => {
+export const getHiddenMedia = (params: { cursor?: string; limit?: number }) => {
   const sp = buildSearchParams({
     cursor: params.cursor,
     limit: params.limit,
   })
-  return fetchJSON<MediaPage>(`/media/hidden?${sp}`)
+  return fetchJSON(`/media/hidden?${sp}`, MediaPage)
 }
 
 export const getHiddenCount = () =>
-  fetchJSON<{ count: number }>('/media/hidden/count')
+  fetchJSON('/media/hidden/count', CountResponse)
 
 // Favorites
 export const toggleFavorite = (mediaId: number) =>
-  fetchJSON<{ success: boolean; favorited: boolean }>(
+  fetchJSON(
     `/media/${mediaId}/favorite`,
+    z.object({ success: z.boolean(), favorited: z.boolean() }),
     { method: 'POST' },
   )
 
 export const getFavoritesMedia = (params: {
-  cursor?: number
+  cursor?: string
   limit?: number
 }) => {
   const sp = buildSearchParams({
     cursor: params.cursor,
     limit: params.limit,
   })
-  return fetchJSON<MediaPage>(`/media/favorites?${sp}`)
+  return fetchJSON(`/media/favorites?${sp}`, MediaPage)
 }
 
 export const getFavoritesCount = () =>
-  fetchJSON<{ count: number }>('/media/favorites/count')
+  fetchJSON('/media/favorites/count', CountResponse)
 
 // Download
 export async function downloadZip(mediaIds: number[]): Promise<Blob> {
@@ -208,13 +237,6 @@ export async function downloadZip(mediaIds: number[]): Promise<Blob> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ media_ids: mediaIds }),
   })
-  if (!resp.ok) {
-    let detail = `${resp.status} ${resp.statusText}`
-    try {
-      const body = await resp.json()
-      if (body.detail) detail = body.detail
-    } catch {}
-    throw new Error(detail)
-  }
+  await ensureOk(resp)
   return resp.blob()
 }

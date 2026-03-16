@@ -1,6 +1,7 @@
 import { useEffect, useCallback } from 'react'
-import type { MediaItem } from '#/api/types'
+import type { MediaItem } from '#/api/schemas'
 import { getDownloadUrl } from '#/api/client'
+import { formatDateShort, formatFileSize } from '#/utils/format'
 
 interface Props {
   item: MediaItem
@@ -170,13 +171,7 @@ export default function Lightbox({
           <span>
             in <span className="text-neutral-200">{item.chat_name}</span>
           </span>
-          <span>
-            {new Date(item.date).toLocaleDateString(undefined, {
-              year: 'numeric',
-              month: 'short',
-              day: 'numeric',
-            })}
-          </span>
+          <span>{formatDateShort(item.date)}</span>
           {item.file_size != null && (
             <span>{formatFileSize(item.file_size)}</span>
           )}
@@ -246,10 +241,4 @@ export default function Lightbox({
       </div>
     </div>
   )
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
