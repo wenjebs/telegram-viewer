@@ -2,8 +2,10 @@ import { z, ZodError } from 'zod'
 import {
   AuthStatus,
   CountResponse,
+  FaceScanStatus,
   Group,
   MediaPage,
+  Person,
   SuccessResponse,
   SyncStatus,
 } from './schemas'
@@ -240,3 +242,47 @@ export async function downloadZip(mediaIds: number[]): Promise<Blob> {
   await ensureOk(resp)
   return resp.blob()
 }
+
+// Faces
+export const getFaceScanStatus = () =>
+  fetchJSON('/faces/scan-status', FaceScanStatus)
+
+export const startFaceScan = (force = false) =>
+  fetchJSON(`/faces/scan?force=${force}`, z.object({ started: z.boolean() }), {
+    method: 'POST',
+  })
+
+export const getPersons = () => fetchJSON('/faces/persons', z.array(Person))
+
+export const getPersonMedia = (params: {
+  personId: number
+  cursor?: string
+  limit?: number
+}) => {
+  const sp = buildSearchParams({
+    cursor: params.cursor,
+    limit: params.limit,
+  })
+  return fetchJSON(`/faces/persons/${params.personId}/media?${sp}`, MediaPage)
+}
+
+export const renamePerson = (id: number, name: string) =>
+  fetchJSON(`/faces/persons/${id}`, SuccessResponse, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+
+export const mergePersons = (keepId: number, mergeId: number) =>
+  fetchJSON('/faces/persons/merge', SuccessResponse, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ keep_id: keepId, merge_id: mergeId }),
+  })
+
+export const removeFaceFromPerson = (personId: number, faceId: number) =>
+  fetchJSON(`/faces/persons/${personId}/faces/${faceId}`, SuccessResponse, {
+    method: 'DELETE',
+  })
+
+export const getFaceCropUrl = (faceId: number) => `${BASE}/faces/${faceId}/crop`

@@ -47,9 +47,29 @@ export const SyncStatus = z.object({
   total: z.number(),
 })
 
+export const Person = z.object({
+  id: z.number(),
+  name: z.string().nullable(),
+  display_name: z.string(),
+  representative_face_id: z.number().nullable(),
+  face_count: z.number(),
+  avatar_crop_path: z.string().nullable(),
+  created_at: z.string(),
+  updated_at: z.string(),
+})
+
+export const FaceScanStatus = z.object({
+  status: z.enum(['idle', 'scanning', 'clustering', 'done', 'error']),
+  scanned: z.number(),
+  total: z.number(),
+  person_count: z.number(),
+})
+
 // --- Inferred types (exported for consumers) ---
 export type AuthStatus = z.infer<typeof AuthStatus>
 export type Group = z.infer<typeof Group>
 export type MediaItem = z.infer<typeof MediaItem>
 export type MediaPage = z.infer<typeof MediaPage>
 export type SyncStatus = z.infer<typeof SyncStatus>
+export type Person = z.infer<typeof Person>
+export type FaceScanStatus = z.infer<typeof FaceScanStatus>
