@@ -1,11 +1,23 @@
-import { useState, useCallback, useMemo, useEffect } from 'react'
+import { useCallback, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import type { Group } from '#/api/schemas'
-import { getGroups, toggleGroupActive } from '#/api/client'
+import type { Group, PreviewCounts } from '#/api/schemas'
+import {
+  getGroups,
+  getPreviewCounts,
+  toggleGroupActive,
+  unsyncGroup as unsyncGroupApi,
+} from '#/api/client'
 
-export function useGroups(enabled = true) {
+interface UseGroupsOptions {
+  enabled?: boolean
+  displayGroupIds: Set<number>
+}
+
+export function useGroups({
+  enabled = true,
+  displayGroupIds,
+}: UseGroupsOptions) {
   const queryClient = useQueryClient()
-  const [displayGroupIds, setDisplayGroupIds] = useState<Set<number>>(new Set())
 
   const {
     data: groups = [],
@@ -28,34 +40,29 @@ export function useGroups(enabled = true) {
     [queryClient],
   )
 
+  const unsyncGroup = useCallback(
+    async (groupId: number) => {
+      await unsyncGroupApi(groupId)
+      queryClient.invalidateQueries({ queryKey: ['groups'] })
+      queryClient.invalidateQueries({ queryKey: ['media'] })
+      queryClient.invalidateQueries({ queryKey: ['counts'] })
+      queryClient.invalidateQueries({ queryKey: ['preview-counts'] })
+      queryClient.invalidateQueries({ queryKey: ['faces'] })
+    },
+    [queryClient],
+  )
+
   const activeGroupIds = useMemo(
     () => groups.filter((g) => g.active).map((g) => g.id),
     [groups],
   )
 
-  useEffect(() => {
-    setDisplayGroupIds((prev) => {
-      const activeSet = new Set(activeGroupIds)
-      const next = new Set([...prev].filter((id) => activeSet.has(id)))
-      return next.size === prev.size ? prev : next
-    })
-  }, [activeGroupIds])
-
-  const toggleDisplayFilter = useCallback((groupId: number) => {
-    setDisplayGroupIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(groupId)) {
-        next.delete(groupId)
-      } else {
-        next.add(groupId)
-      }
-      return next
-    })
-  }, [])
-
-  const clearDisplayFilter = useCallback(() => {
-    setDisplayGroupIds(new Set())
-  }, [])
+  const { data: previewCounts = {} } = useQuery<PreviewCounts>({
+    queryKey: ['preview-counts'],
+    queryFn: getPreviewCounts,
+    enabled: enabled && activeGroupIds.length > 0,
+    staleTime: 5 * 60 * 1000,
+  })
 
   const displayFilteredGroupIds = useMemo(
     () =>
@@ -70,11 +77,10 @@ export function useGroups(enabled = true) {
     loading,
     error: error ? String(error) : null,
     toggleActive,
+    unsyncGroup,
     activeGroupIds,
-    displayGroupIds,
     displayFilteredGroupIds,
-    toggleDisplayFilter,
-    clearDisplayFilter,
     refetch,
+    previewCounts,
   }
 }

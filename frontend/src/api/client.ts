@@ -6,6 +6,7 @@ import {
   Group,
   MediaPage,
   Person,
+  PreviewCounts,
   SuccessResponse,
   SyncStatus,
   ZipJobResponse,
@@ -95,6 +96,11 @@ export const clearGroupMedia = (chatId: number) =>
     method: 'DELETE',
   })
 
+export const unsyncGroup = (chatId: number) =>
+  fetchJSON(`/groups/${chatId}/unsync`, SuccessResponse, {
+    method: 'POST',
+  })
+
 export const clearAllMedia = () =>
   fetchJSON('/groups/media', SuccessResponse, {
     method: 'DELETE',
@@ -102,6 +108,9 @@ export const clearAllMedia = () =>
 
 export const getSyncStatus = (chatId: number) =>
   fetchJSON(`/groups/${chatId}/sync-status`, SyncStatus)
+
+export const getPreviewCounts = () =>
+  fetchJSON('/groups/preview-counts', PreviewCounts)
 
 // Hidden dialogs
 export const hideDialog = (chatId: number) =>
@@ -151,6 +160,7 @@ export const getMedia = (params: {
   type?: string
   dateFrom?: string
   dateTo?: string
+  faces?: string
 }) => {
   const sp = buildSearchParams({
     cursor: params.cursor,
@@ -159,15 +169,16 @@ export const getMedia = (params: {
     type: params.type,
     date_from: params.dateFrom,
     date_to: params.dateTo,
+    faces: params.faces,
   })
   return fetchJSON(`/media?${sp}`, MediaPage)
 }
 
-export const getThumbnailUrl = (mediaId: number) =>
-  `${BASE}/media/${mediaId}/thumbnail`
+export const getThumbnailUrl = (mediaId: number, date?: string) =>
+  `${BASE}/media/${mediaId}/thumbnail${date ? `?d=${date}` : ''}`
 
-export const getDownloadUrl = (mediaId: number) =>
-  `${BASE}/media/${mediaId}/download`
+export const getDownloadUrl = (mediaId: number, date?: string) =>
+  `${BASE}/media/${mediaId}/download${date ? `?d=${date}` : ''}`
 
 // Hidden
 export const hideMedia = (mediaId: number) =>
@@ -196,6 +207,13 @@ export const hideMediaBatch = (mediaIds: number[]) =>
 
 export const favoriteMediaBatch = (mediaIds: number[]) =>
   fetchJSON('/media/favorite-batch', SuccessResponse, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ media_ids: mediaIds }),
+  })
+
+export const unfavoriteMediaBatch = (mediaIds: number[]) =>
+  fetchJSON('/media/unfavorite-batch', SuccessResponse, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ media_ids: mediaIds }),
@@ -234,6 +252,8 @@ export const getFavoritesMedia = (params: {
 export const getFavoritesCount = () =>
   fetchJSON('/media/favorites/count', CountResponse)
 
+export const getMediaCount = () => fetchJSON('/media/count', CountResponse)
+
 // Download (legacy sync endpoint kept for compatibility)
 export async function downloadZip(mediaIds: number[]): Promise<Blob> {
   const resp = await fetch(`${BASE}/media/download-zip`, {
@@ -264,11 +284,24 @@ export const getFaceScanStatus = () =>
   fetchJSON('/faces/scan-status', FaceScanStatus)
 
 export const startFaceScan = (force = false) =>
-  fetchJSON(`/faces/scan?force=${force}`, z.object({ started: z.boolean() }), {
-    method: 'POST',
-  })
+  fetchJSON(
+    `/faces/scan?force=${force}`,
+    z.object({
+      started: z.boolean(),
+      status: z.string().optional(),
+      scanned: z.number().optional(),
+      total: z.number().optional(),
+    }),
+    { method: 'POST' },
+  )
 
 export const getPersons = () => fetchJSON('/faces/persons', z.array(Person))
+
+export const getSimilarGroups = (threshold?: number) =>
+  fetchJSON(
+    `/faces/persons/similar-groups${threshold != null ? `?threshold=${threshold}` : ''}`,
+    z.object({ groups: z.array(z.array(z.number())) }),
+  )
 
 export const getPersonMedia = (params: {
   personId: number
@@ -296,9 +329,17 @@ export const mergePersons = (keepId: number, mergeId: number) =>
     body: JSON.stringify({ keep_id: keepId, merge_id: mergeId }),
   })
 
+export const mergePersonsBatch = (keepId: number, mergeIds: number[]) =>
+  fetchJSON('/faces/persons/merge-batch', SuccessResponse, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ keep_id: keepId, merge_ids: mergeIds }),
+  })
+
 export const removeFaceFromPerson = (personId: number, faceId: number) =>
   fetchJSON(`/faces/persons/${personId}/faces/${faceId}`, SuccessResponse, {
     method: 'DELETE',
   })
 
-export const getFaceCropUrl = (faceId: number) => `${BASE}/faces/${faceId}/crop`
+export const getFaceCropUrl = (faceId: number, updatedAt?: string) =>
+  `${BASE}/faces/${faceId}/crop${updatedAt ? `?v=${updatedAt}` : ''}`
