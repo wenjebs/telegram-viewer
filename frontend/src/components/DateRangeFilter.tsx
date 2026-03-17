@@ -15,10 +15,10 @@ export default function DateRangeFilter({
   const [collapsed, setCollapsed] = useState(true)
 
   return (
-    <div className="border-t border-neutral-800 p-3">
+    <div className="border-t border-border p-3">
       <div className="flex items-center justify-between">
         <button
-          className="flex items-center gap-1.5 text-xs font-semibold text-neutral-400 hover:text-neutral-300"
+          className="flex items-center gap-1.5 text-xs font-semibold text-text-soft hover:text-text"
           onClick={() => setCollapsed((c) => !c)}
         >
           <span
@@ -48,10 +48,12 @@ export default function DateRangeFilter({
             onSelect={onDateRangeChange}
             style={
               {
-                '--rdp-accent-color': '#0ea5e9',
-                '--rdp-accent-background-color': '#0c4a6e',
-                '--rdp-range_middle-background-color': '#172554',
-                '--rdp-range_middle-color': '#bae6fd',
+                '--rdp-accent-color': 'var(--th-accent)',
+                '--rdp-accent-background-color':
+                  'var(--color-surface-alt, #0c4a6e)',
+                '--rdp-range_middle-background-color':
+                  'var(--color-surface-strong, #172554)',
+                '--rdp-range_middle-color': 'var(--color-text, #bae6fd)',
                 '--rdp-day-height': '34px',
                 '--rdp-day-width': '34px',
                 '--rdp-day_button-height': '34px',
@@ -62,7 +64,7 @@ export default function DateRangeFilter({
                 '--rdp-outside-opacity': '0.3',
                 width: '100%',
                 fontSize: '13px',
-                color: '#d4d4d4',
+                color: 'var(--color-text-soft, #d4d4d4)',
               } as React.CSSProperties
             }
           />

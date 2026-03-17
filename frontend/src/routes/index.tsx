@@ -68,7 +68,6 @@ const searchSchema = z.object({
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional()
     .catch(undefined),
-  groups: z.string().optional().catch(undefined),
   q: z.string().optional().catch(undefined),
   hiddenDialogs: z
     .union([z.literal('1'), z.literal('true'), z.literal(true)])
@@ -104,13 +103,6 @@ function Home() {
     [dateFrom, dateTo],
   )
   const showHiddenDialogs = search.hiddenDialogs ?? false
-  const displayGroupIds = useMemo(
-    () =>
-      new Set(
-        search.groups?.split(',').map(Number).filter(Number.isFinite) ?? [],
-      ),
-    [search.groups],
-  )
   // #endregion
 
   // #region Local state (not URL-worthy)
@@ -182,26 +174,6 @@ function Home() {
     (id: number | undefined) => setSearch({ person: id }),
     [setSearch],
   )
-  const toggleDisplayFilter = useCallback(
-    (groupId: number) => {
-      const next = new Set(displayGroupIds)
-      if (next.has(groupId)) {
-        next.delete(groupId)
-      } else {
-        next.add(groupId)
-      }
-      const ids = [...next]
-      setSearch(
-        { groups: ids.length ? ids.join(',') : undefined },
-        { replace: true },
-      )
-    },
-    [displayGroupIds, setSearch],
-  )
-  const clearDisplayFilter = useCallback(
-    () => setSearch({ groups: undefined }, { replace: true }),
-    [setSearch],
-  )
   const setShowHiddenDialogs = useCallback(
     (v: boolean) =>
       setSearch({ hiddenDialogs: v ? true : undefined }, { replace: true }),
@@ -215,24 +187,22 @@ function Home() {
     toggleActive,
     unsyncGroup,
     activeGroupIds,
-    displayFilteredGroupIds,
     refetch: refetchGroups,
     previewCounts,
   } = useGroups({
     enabled: authenticated === true,
-    displayGroupIds,
   })
 
   const facesFilter = search.faces ?? null
   const mediaFilters: MediaFilters = useMemo(
     () => ({
-      groups: displayFilteredGroupIds,
+      groups: activeGroupIds,
       type: mediaTypeFilter ?? undefined,
       dateFrom,
       dateTo,
       faces: facesFilter ?? undefined,
     }),
-    [displayFilteredGroupIds, mediaTypeFilter, dateFrom, dateTo, facesFilter],
+    [activeGroupIds, mediaTypeFilter, dateFrom, dateTo, facesFilter],
   )
 
   const media = useMedia(mediaFilters, authenticated === true)
@@ -388,21 +358,6 @@ function Home() {
     }
   }, [showHiddenDialogs]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Prune displayGroupIds when activeGroupIds changes
-  useEffect(() => {
-    if (displayGroupIds.size === 0) return
-    const activeSet = new Set(activeGroupIds)
-    const pruned = [...displayGroupIds].filter((id) => activeSet.has(id))
-    if (pruned.length < displayGroupIds.size) {
-      setSearch(
-        {
-          groups: pruned.length ? pruned.join(',') : undefined,
-        },
-        { replace: true },
-      )
-    }
-  }, [activeGroupIds]) // eslint-disable-line react-hooks/exhaustive-deps
-
   // Escape key
   useHotkeys(
     'escape',
@@ -518,14 +473,6 @@ function Home() {
       return
     }
     toast.success(`${group.name} unsynced`)
-    // Remove from display filter if present
-    if (displayGroupIds.has(group.id)) {
-      const remaining = [...displayGroupIds].filter((id) => id !== group.id)
-      setSearch(
-        { groups: remaining.length ? remaining.join(',') : undefined },
-        { replace: true },
-      )
-    }
   }
 
   const handleToggleHiddenDialogs = async () => {
@@ -578,8 +525,6 @@ function Home() {
         onWidthChange={setSidebarWidth}
         groups={groups}
         onToggleGroup={toggleActive}
-        displayGroupIds={displayGroupIds}
-        onToggleDisplayFilter={toggleDisplayFilter}
         mediaTypeFilter={mediaTypeFilter}
         onMediaTypeFilter={setMediaTypeFilter}
         chatTypeFilter={chatTypeFilter}
@@ -626,10 +571,10 @@ function Home() {
       />
       <div className="relative flex flex-1 flex-col overflow-hidden">
         {viewMode !== 'normal' && (
-          <div className="flex items-center gap-2 border-b border-neutral-800 bg-neutral-900 px-4 py-2">
+          <div className="flex items-center gap-2 border-b border-border bg-surface px-4 py-2">
             {viewMode === 'hidden' && (
               <svg
-                className="h-4 w-4 text-neutral-400"
+                className="h-4 w-4 text-text-soft"
                 viewBox="0 0 16 16"
                 fill="none"
                 stroke="currentColor"
@@ -641,11 +586,11 @@ function Home() {
               </svg>
             )}
             {viewMode === 'favorites' && (
-              <span className="text-sm text-neutral-400">♥</span>
+              <span className="text-sm text-text-soft">♥</span>
             )}
             {viewMode === 'people' && !selectedPerson && (
               <svg
-                className="h-4 w-4 text-neutral-400"
+                className="h-4 w-4 text-text-soft"
                 viewBox="0 0 16 16"
                 fill="none"
                 stroke="currentColor"
@@ -658,7 +603,7 @@ function Home() {
             )}
             {viewMode === 'people' && selectedPerson && (
               <svg
-                className="h-4 w-4 text-neutral-400"
+                className="h-4 w-4 text-text-soft"
                 viewBox="0 0 16 16"
                 fill="none"
                 stroke="currentColor"
@@ -668,7 +613,7 @@ function Home() {
                 <path d="M2 15c0-3 2.7-5 6-5s6 2 6 5" />
               </svg>
             )}
-            <span className="flex-1 text-sm font-medium text-white">
+            <span className="flex-1 text-sm font-medium text-text">
               {viewMode === 'hidden' && 'Hidden Media'}
               {viewMode === 'favorites' && 'Favorites'}
               {viewMode === 'people' && !selectedPerson && 'People'}
@@ -676,7 +621,7 @@ function Home() {
             </span>
             {viewMode === 'people' && !selectedPerson && (
               <div className="flex items-center gap-1">
-                <span className="text-xs text-neutral-500">Similarity</span>
+                <span className="text-xs text-text-soft">Similarity</span>
                 <input
                   type="number"
                   min="0"
@@ -687,7 +632,7 @@ function Home() {
                     const v = Number(e.target.value)
                     if (v >= 0 && v <= 1) setSimilarityThreshold(v)
                   }}
-                  className="w-14 rounded bg-neutral-800 px-1.5 py-0.5 text-xs text-neutral-300 outline-none focus:ring-1 focus:ring-sky-500"
+                  className="w-14 rounded bg-surface-alt px-1.5 py-0.5 text-xs text-text outline-none focus:ring-1 focus:ring-ring"
                 />
               </div>
             )}
@@ -695,14 +640,14 @@ function Home() {
               !selectedPerson &&
               !personMerge.selectMode.active && (
                 <button
-                  className="rounded px-2 py-1 text-xs text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
+                  className="rounded px-2 py-1 text-xs text-text-soft hover:bg-hover hover:text-text"
                   onClick={() => personMerge.selectMode.enterSelectMode()}
                 >
                   Select
                 </button>
               )}
             <button
-              className="rounded p-1 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300"
+              className="rounded p-1 text-text-soft hover:bg-hover hover:text-text"
               onClick={() => {
                 if (personMerge.selectMode.active) {
                   personMerge.selectMode.exitSelectMode()
@@ -729,52 +674,25 @@ function Home() {
           </div>
         )}
         {activeGroupIds.length > 0 && (
-          <div className="flex items-center justify-center gap-2 border-b border-neutral-800 bg-neutral-900/80 px-4 py-2 backdrop-blur-sm">
-            <span className="shrink-0 text-xs text-neutral-500">Syncing:</span>
+          <div className="flex items-center justify-center gap-2 border-b border-border bg-surface/80 px-4 py-2 backdrop-blur-sm">
+            <span className="shrink-0 text-xs text-text-soft">Syncing:</span>
             <div className="flex flex-wrap justify-center gap-1">
               {groups
                 .filter((g) => g.active)
-                .map((g) => {
-                  const filtered = displayGroupIds.has(g.id)
-                  return (
-                    <button
-                      key={g.id}
-                      className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${
-                        filtered
-                          ? 'bg-sky-600/20 text-sky-300 hover:bg-sky-600/30'
-                          : 'bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/30'
-                      }`}
-                      onClick={() => toggleDisplayFilter(g.id)}
-                      title="Filter gallery to this chat"
-                    >
-                      <span className="max-w-28 truncate">{g.name}</span>
-                      <span
-                        role="button"
-                        className={`${
-                          filtered
-                            ? 'text-sky-400/60 hover:text-sky-300'
-                            : 'text-emerald-400/60 hover:text-emerald-300'
-                        }`}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          toggleActive(g)
-                        }}
-                        title="Stop syncing"
-                      >
-                        ✕
-                      </span>
-                    </button>
-                  )
-                })}
+                .map((g) => (
+                  <button
+                    key={g.id}
+                    className="flex items-center gap-1 rounded-full bg-emerald-600/20 px-2 py-0.5 text-xs text-emerald-300 hover:bg-emerald-600/30"
+                    onClick={() => toggleActive(g)}
+                    title="Click to deactivate"
+                  >
+                    <span className="max-w-28 truncate">{g.name}</span>
+                    <span className="text-emerald-400/60 hover:text-emerald-300">
+                      ✕
+                    </span>
+                  </button>
+                ))}
             </div>
-            {displayGroupIds.size > 0 && (
-              <button
-                className="shrink-0 text-xs text-neutral-500 hover:text-neutral-300"
-                onClick={clearDisplayFilter}
-              >
-                Show all
-              </button>
-            )}
           </div>
         )}
         {viewMode === 'people' && !selectedPerson ? (
@@ -897,25 +815,25 @@ function Home() {
         />
       )}
       {personMerge.selectMode.active && (
-        <div className="fixed inset-x-0 bottom-0 z-40 flex items-center justify-between gap-2 border-t border-neutral-700 bg-neutral-900 px-4 py-2">
-          <span className="text-sm text-neutral-300">
+        <div className="fixed inset-x-0 bottom-0 z-40 flex items-center justify-between gap-2 border-t border-border bg-surface px-4 py-2">
+          <span className="text-sm text-text">
             {personMerge.selectMode.selectedCount} selected
           </span>
           <div className="flex items-center gap-2">
             <button
-              className="rounded px-2 py-1 text-xs text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
+              className="rounded px-2 py-1 text-xs text-text-soft hover:bg-hover hover:text-text"
               onClick={() => personMerge.selectMode.selectAll(persons.persons)}
             >
               Select All
             </button>
             <button
-              className="rounded px-2 py-1 text-xs text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
+              className="rounded px-2 py-1 text-xs text-text-soft hover:bg-hover hover:text-text"
               onClick={personMerge.selectMode.deselectAll}
             >
               Deselect
             </button>
             <button
-              className="rounded bg-sky-600 px-3 py-1 text-xs text-white hover:bg-sky-500 disabled:opacity-40"
+              className="rounded bg-accent px-3 py-1 text-xs text-white hover:bg-accent-hover disabled:opacity-40"
               disabled={
                 personMerge.selectMode.selectedCount < 2 || personMerge.merging
               }
@@ -924,7 +842,7 @@ function Home() {
               {personMerge.merging ? 'Merging...' : 'Merge'}
             </button>
             <button
-              className="rounded p-1 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300"
+              className="rounded p-1 text-text-soft hover:bg-hover hover:text-text"
               onClick={personMerge.selectMode.exitSelectMode}
             >
               <svg
