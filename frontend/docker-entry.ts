@@ -1,12 +1,12 @@
-import { join } from "path"
-import { readdir, stat } from "fs/promises"
-import server from "./dist/server/server.js"
+import { join } from 'path'
+import { readdir, stat } from 'fs/promises'
+import server from './dist/server/server.js'
 
-const CLIENT_DIR = join(import.meta.dir, "dist", "client")
+const CLIENT_DIR = join(import.meta.dir, 'dist', 'client')
 
 // Build a set of all static asset paths at startup
 const staticFiles = new Set<string>()
-async function walkDir(dir: string, prefix = "") {
+async function walkDir(dir: string, prefix = '') {
   const entries = await readdir(dir, { withFileTypes: true })
   for (const entry of entries) {
     const relPath = prefix ? `${prefix}/${entry.name}` : entry.name

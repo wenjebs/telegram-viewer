@@ -1,4 +1,12 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import {
+  lazy,
+  Suspense,
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+} from 'react'
 import { useHotkeys } from 'react-hotkeys-hook'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -17,11 +25,8 @@ import {
 } from '#/api/client'
 import type { DateRange } from 'react-day-picker'
 import type { Group, MediaItem, Person } from '#/api/schemas'
-import AuthFlow from '#/components/AuthFlow'
 import Sidebar from '#/components/Sidebar'
 import MediaGrid from '#/components/MediaGrid'
-import Lightbox from '#/components/Lightbox'
-import SelectionBar from '#/components/SelectionBar'
 import { useGroups } from '#/hooks/useGroups'
 import { useMedia } from '#/hooks/useMedia'
 import type { MediaFilters } from '#/hooks/useMedia'
@@ -36,14 +41,18 @@ import { useFaceScan } from '#/hooks/useFaceScan'
 import { usePersons } from '#/hooks/usePersons'
 import { usePersonMedia } from '#/hooks/usePersonMedia'
 import { renamePerson, mergePersons } from '#/api/client'
-import PeopleGrid from '#/components/PeopleGrid'
-import PersonDetail from '#/components/PersonDetail'
-import PersonMergeModal from '#/components/PersonMergeModal'
-import KeepPersonPicker from '#/components/KeepPersonPicker'
-import ShortcutsModal from '#/components/ShortcutsModal'
 import { usePersonMerge } from '#/hooks/usePersonMerge'
 import { formatDateParam } from '#/utils/format'
 import { useSearchParams } from '#/hooks/useSearchParam'
+
+const AuthFlow = lazy(() => import('#/components/AuthFlow'))
+const Lightbox = lazy(() => import('#/components/Lightbox'))
+const SelectionBar = lazy(() => import('#/components/SelectionBar'))
+const PeopleGrid = lazy(() => import('#/components/PeopleGrid'))
+const PersonDetail = lazy(() => import('#/components/PersonDetail'))
+const PersonMergeModal = lazy(() => import('#/components/PersonMergeModal'))
+const KeepPersonPicker = lazy(() => import('#/components/KeepPersonPicker'))
+const ShortcutsModal = lazy(() => import('#/components/ShortcutsModal'))
 
 type ViewMode = 'normal' | 'hidden' | 'favorites' | 'people'
 
@@ -527,7 +536,11 @@ function Home() {
   // #region Render
   if (authenticated === null) return null
   if (!authenticated)
-    return <AuthFlow onAuthenticated={() => setAuthenticated(true)} />
+    return (
+      <Suspense>
+        <AuthFlow onAuthenticated={() => setAuthenticated(true)} />
+      </Suspense>
+    )
 
   return (
     <div className="flex h-screen">
@@ -705,52 +718,56 @@ function Home() {
           </div>
         )}
         {viewMode === 'people' && !selectedPerson ? (
-          <PeopleGrid
-            persons={persons.persons}
-            loading={persons.loading}
-            onPersonClick={(p: Person) => {
-              personMerge.selectMode.exitSelectMode()
-              setSelectedPersonId(p.id)
-            }}
-            selectMode={personMerge.selectMode.active}
-            selectedIds={personMerge.selectMode.selectedIds}
-            onToggle={personMerge.selectMode.toggle}
-            similarGroups={persons.similarGroups}
-            onSelectGroup={(ids) => {
-              if (!personMerge.selectMode.active) {
-                personMerge.selectMode.enterSelectMode()
-              }
-              personMerge.selectMode.setSelection(new Set(ids))
-            }}
-            onRename={async (id, name) => {
-              try {
-                await renamePerson(id, name)
-                persons.invalidate()
-              } catch {
-                toast.error('Failed to rename person')
-              }
-            }}
-            containerRef={peopleContainerRef}
-            dragHandlers={peopleDragSelect.handlers}
-            selectionRect={peopleDragSelect.selectionRect}
-          />
+          <Suspense>
+            <PeopleGrid
+              persons={persons.persons}
+              loading={persons.loading}
+              onPersonClick={(p: Person) => {
+                personMerge.selectMode.exitSelectMode()
+                setSelectedPersonId(p.id)
+              }}
+              selectMode={personMerge.selectMode.active}
+              selectedIds={personMerge.selectMode.selectedIds}
+              onToggle={personMerge.selectMode.toggle}
+              similarGroups={persons.similarGroups}
+              onSelectGroup={(ids) => {
+                if (!personMerge.selectMode.active) {
+                  personMerge.selectMode.enterSelectMode()
+                }
+                personMerge.selectMode.setSelection(new Set(ids))
+              }}
+              onRename={async (id, name) => {
+                try {
+                  await renamePerson(id, name)
+                  persons.invalidate()
+                } catch {
+                  toast.error('Failed to rename person')
+                }
+              }}
+              containerRef={peopleContainerRef}
+              dragHandlers={peopleDragSelect.handlers}
+              selectionRect={peopleDragSelect.selectionRect}
+            />
+          </Suspense>
         ) : (
           <>
             {viewMode === 'people' && selectedPerson && (
-              <PersonDetail
-                key={selectedPerson.id}
-                person={selectedPerson}
-                onBack={() => setSelectedPersonId(undefined)}
-                onRename={async (name) => {
-                  try {
-                    await renamePerson(selectedPerson.id, name)
-                    persons.invalidate()
-                  } catch {
-                    toast.error('Failed to rename person')
-                  }
-                }}
-                onMerge={() => setShowMergeModal(true)}
-              />
+              <Suspense>
+                <PersonDetail
+                  key={selectedPerson.id}
+                  person={selectedPerson}
+                  onBack={() => setSelectedPersonId(undefined)}
+                  onRename={async (name) => {
+                    try {
+                      await renamePerson(selectedPerson.id, name)
+                      persons.invalidate()
+                    } catch {
+                      toast.error('Failed to rename person')
+                    }
+                  }}
+                  onMerge={() => setShowMergeModal(true)}
+                />
+              </Suspense>
             )}
             <MediaGrid
               items={activeItems}
@@ -773,55 +790,59 @@ function Home() {
         )}
       </div>
       {lightbox.selectedItem && (
-        <Lightbox
-          item={lightbox.selectedItem}
-          onClose={lightbox.handleClose}
-          onPrev={lightbox.handlePrev}
-          onNext={lightbox.handleNext}
-          hasPrev={lightbox.selectedIndex > 0}
-          hasNext={lightbox.selectedIndex < activeItems.length - 1}
-          selected={selectMode.isSelected(lightbox.selectedItem.id)}
-          favorited={!!lightbox.selectedItem.favorited_at}
-          onToggleSelect={lightbox.handleToggleSelect}
-          onHide={lightbox.handleHide}
-          onUnhide={lightbox.handleUnhide}
-          onToggleFavorite={lightbox.handleToggleFavorite}
-        />
+        <Suspense>
+          <Lightbox
+            item={lightbox.selectedItem}
+            onClose={lightbox.handleClose}
+            onPrev={lightbox.handlePrev}
+            onNext={lightbox.handleNext}
+            hasPrev={lightbox.selectedIndex > 0}
+            hasNext={lightbox.selectedIndex < activeItems.length - 1}
+            selected={selectMode.isSelected(lightbox.selectedItem.id)}
+            favorited={!!lightbox.selectedItem.favorited_at}
+            onToggleSelect={lightbox.handleToggleSelect}
+            onHide={lightbox.handleHide}
+            onUnhide={lightbox.handleUnhide}
+            onToggleFavorite={lightbox.handleToggleFavorite}
+          />
+        </Suspense>
       )}
       {selectMode.active && (
-        <SelectionBar
-          selectedCount={selectMode.selectedCount}
-          onSelectAll={() => selectMode.selectAll(activeItems)}
-          onDeselectAll={selectMode.deselectAll}
-          onDownload={selectMode.exitSelectMode}
-          onCancel={selectMode.exitSelectMode}
-          selectedIds={selectMode.selectedIds}
-          viewMode={viewMode}
-          onUnhide={() => {
-            hidden.removeItems([...selectMode.selectedIds])
-            selectMode.exitSelectMode()
-            invalidateCounts()
-            invalidateActiveMedia()
-          }}
-          onHide={() => {
-            const ids = [...selectMode.selectedIds]
-            activeSource.removeItems(ids)
-            selectMode.exitSelectMode()
-            invalidateCounts()
-            invalidateActiveMedia()
-          }}
-          onFavorite={() => {
-            selectMode.exitSelectMode()
-            invalidateCounts()
-            invalidateActiveMedia()
-          }}
-          onUnfavorite={() => {
-            favorites.removeItems([...selectMode.selectedIds])
-            selectMode.exitSelectMode()
-            invalidateCounts()
-            invalidateActiveMedia()
-          }}
-        />
+        <Suspense>
+          <SelectionBar
+            selectedCount={selectMode.selectedCount}
+            onSelectAll={() => selectMode.selectAll(activeItems)}
+            onDeselectAll={selectMode.deselectAll}
+            onDownload={selectMode.exitSelectMode}
+            onCancel={selectMode.exitSelectMode}
+            selectedIds={selectMode.selectedIds}
+            viewMode={viewMode}
+            onUnhide={() => {
+              hidden.removeItems([...selectMode.selectedIds])
+              selectMode.exitSelectMode()
+              invalidateCounts()
+              invalidateActiveMedia()
+            }}
+            onHide={() => {
+              const ids = [...selectMode.selectedIds]
+              activeSource.removeItems(ids)
+              selectMode.exitSelectMode()
+              invalidateCounts()
+              invalidateActiveMedia()
+            }}
+            onFavorite={() => {
+              selectMode.exitSelectMode()
+              invalidateCounts()
+              invalidateActiveMedia()
+            }}
+            onUnfavorite={() => {
+              favorites.removeItems([...selectMode.selectedIds])
+              selectMode.exitSelectMode()
+              invalidateCounts()
+              invalidateActiveMedia()
+            }}
+          />
+        </Suspense>
       )}
       {personMerge.selectMode.active && (
         <div className="fixed inset-x-0 bottom-0 z-40 flex items-center justify-between gap-2 border-t border-border bg-surface px-4 py-2">
@@ -868,35 +889,41 @@ function Home() {
         </div>
       )}
       {personMerge.showKeeperPicker && (
-        <KeepPersonPicker
-          persons={persons.persons.filter((p) =>
-            personMerge.selectMode.selectedIds.has(p.id),
-          )}
-          onSelect={personMerge.executeMerge}
-          onClose={personMerge.closeKeeperPicker}
-        />
+        <Suspense>
+          <KeepPersonPicker
+            persons={persons.persons.filter((p) =>
+              personMerge.selectMode.selectedIds.has(p.id),
+            )}
+            onSelect={personMerge.executeMerge}
+            onClose={personMerge.closeKeeperPicker}
+          />
+        </Suspense>
       )}
       {showMergeModal && selectedPerson && (
-        <PersonMergeModal
-          persons={persons.persons}
-          currentPersonId={selectedPerson.id}
-          onMerge={async (mergeId) => {
-            try {
-              await mergePersons(selectedPerson.id, mergeId)
-              setShowMergeModal(false)
-              persons.invalidate()
-              queryClient.invalidateQueries({
-                queryKey: ['faces', 'persons', selectedPerson.id, 'media'],
-              })
-            } catch {
-              toast.error('Failed to merge persons')
-            }
-          }}
-          onClose={() => setShowMergeModal(false)}
-        />
+        <Suspense>
+          <PersonMergeModal
+            persons={persons.persons}
+            currentPersonId={selectedPerson.id}
+            onMerge={async (mergeId) => {
+              try {
+                await mergePersons(selectedPerson.id, mergeId)
+                setShowMergeModal(false)
+                persons.invalidate()
+                queryClient.invalidateQueries({
+                  queryKey: ['faces', 'persons', selectedPerson.id, 'media'],
+                })
+              } catch {
+                toast.error('Failed to merge persons')
+              }
+            }}
+            onClose={() => setShowMergeModal(false)}
+          />
+        </Suspense>
       )}
       {showShortcuts && (
-        <ShortcutsModal onClose={() => setShowShortcuts(false)} />
+        <Suspense>
+          <ShortcutsModal onClose={() => setShowShortcuts(false)} />
+        </Suspense>
       )}
     </div>
   )

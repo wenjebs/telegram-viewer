@@ -7,7 +7,7 @@ dev:
     #!/usr/bin/env bash
     lsof -ti :8000 | xargs kill -9 2>/dev/null || true
     lsof -ti :3000 | xargs kill -9 2>/dev/null || true
-    lsof -ti :443 | xargs kill -9 2>/dev/null || true
+    caddy stop 2>/dev/null || true
     # Ensure tele.view is in /etc/hosts
     if ! grep -q 'tele.view' /etc/hosts; then
       echo "Adding tele.view to /etc/hosts (requires password):"

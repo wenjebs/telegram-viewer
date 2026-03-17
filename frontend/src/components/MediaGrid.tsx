@@ -267,6 +267,7 @@ export default function MediaGrid({
                     onLongPress={
                       onLongPress ? () => onLongPress(item) : undefined
                     }
+                    priority={virtualRow.index === 0}
                   />
                 ))}
               </div>

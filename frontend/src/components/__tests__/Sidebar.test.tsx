@@ -72,12 +72,7 @@ describe('Sidebar', () => {
 
   it('calls onToggleGroup when group name clicked', () => {
     const onToggleGroup = vi.fn()
-    render(
-      <Sidebar
-        {...defaultProps}
-        onToggleGroup={onToggleGroup}
-      />,
-    )
+    render(<Sidebar {...defaultProps} onToggleGroup={onToggleGroup} />)
     fireEvent.click(screen.getByText('Chat A'))
     expect(onToggleGroup).toHaveBeenCalledWith(
       expect.objectContaining({ id: 1, name: 'Chat A' }),

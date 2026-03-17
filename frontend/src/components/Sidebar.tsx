@@ -1,9 +1,18 @@
-import { useCallback, useDeferredValue, useMemo, useRef, useState } from 'react'
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useDeferredValue,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { useHotkeys } from 'react-hotkeys-hook'
 import Fuse from 'fuse.js'
 import type { DateRange } from 'react-day-picker'
 import type { Group, PreviewCounts, SyncStatus } from '#/api/schemas'
-import DateRangeFilter from './DateRangeFilter'
+
+const DateRangeFilter = lazy(() => import('./DateRangeFilter'))
 import GroupOverflowMenu from './GroupOverflowMenu'
 import { ThemeToggle } from '#/components/ThemeToggle'
 

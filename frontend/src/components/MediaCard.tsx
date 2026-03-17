@@ -10,6 +10,7 @@ interface Props {
   selectMode?: boolean
   selected?: boolean
   onLongPress?: () => void
+  priority?: boolean
 }
 
 export default function MediaCard({
@@ -18,6 +19,7 @@ export default function MediaCard({
   selectMode = false,
   selected = false,
   onLongPress,
+  priority = false,
 }: Props) {
   const isVideo = item.media_type === 'video'
 
@@ -74,7 +76,8 @@ export default function MediaCard({
       <img
         src={getThumbnailUrl(item.id, item.date)}
         alt={item.caption || ''}
-        loading="lazy"
+        loading={priority ? 'eager' : 'lazy'}
+        fetchPriority={priority ? 'high' : undefined}
         draggable={false}
         className="h-full w-full object-cover"
       />

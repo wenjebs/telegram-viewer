@@ -13,6 +13,25 @@ const config = defineConfig({
     tanstackStart(),
     viteReact(),
   ],
+  environments: {
+    client: {
+      build: {
+        rollupOptions: {
+          output: {
+            manualChunks: {
+              'vendor-heavy': [
+                'zod',
+                'react-day-picker',
+                '@floating-ui/react',
+                'lucide-react',
+                'fuse.js',
+              ],
+            },
+          },
+        },
+      },
+    },
+  },
   server: {
     hmr: {
       protocol: 'wss',

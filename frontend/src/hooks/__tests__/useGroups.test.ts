@@ -12,20 +12,18 @@ describe('useGroups', () => {
       '/api/groups/preview-counts': {},
     })
 
-    const { result } = renderHook(
-      () => useGroups(),
-      { wrapper: createWrapper() },
-    )
+    const { result } = renderHook(() => useGroups(), {
+      wrapper: createWrapper(),
+    })
 
     await waitFor(() => expect(result.current.groups.length).toBe(2))
   })
 
   it('returns loading state', () => {
     mockFetch({ '/api/groups': [] })
-    const { result } = renderHook(
-      () => useGroups(),
-      { wrapper: createWrapper() },
-    )
+    const { result } = renderHook(() => useGroups(), {
+      wrapper: createWrapper(),
+    })
     // Initially loading is true
     expect(result.current.loading).toBe(true)
   })
@@ -60,10 +58,9 @@ describe('useGroups', () => {
       })
     }) as unknown as typeof fetch
 
-    const { result } = renderHook(
-      () => useGroups(),
-      { wrapper: createWrapper() },
-    )
+    const { result } = renderHook(() => useGroups(), {
+      wrapper: createWrapper(),
+    })
 
     await waitFor(() => expect(result.current.groups.length).toBe(2))
 
@@ -96,10 +93,9 @@ describe('useGroups', () => {
       '/api/groups/preview-counts': {},
     })
 
-    const { result } = renderHook(
-      () => useGroups(),
-      { wrapper: createWrapper() },
-    )
+    const { result } = renderHook(() => useGroups(), {
+      wrapper: createWrapper(),
+    })
 
     await waitFor(() => expect(result.current.groups.length).toBe(3))
     expect(result.current.activeGroupIds).toEqual([g1.id, g3.id])
@@ -113,10 +109,9 @@ describe('useGroups', () => {
       '/api/groups/preview-counts': counts,
     })
 
-    const { result } = renderHook(
-      () => useGroups(),
-      { wrapper: createWrapper() },
-    )
+    const { result } = renderHook(() => useGroups(), {
+      wrapper: createWrapper(),
+    })
 
     await waitFor(() => expect(result.current.groups.length).toBe(1))
     await waitFor(() =>
@@ -134,10 +129,9 @@ describe('useGroups', () => {
       '/api/groups/preview-counts': {},
     })
 
-    const { result } = renderHook(
-      () => useGroups(),
-      { wrapper: createWrapper() },
-    )
+    const { result } = renderHook(() => useGroups(), {
+      wrapper: createWrapper(),
+    })
 
     await waitFor(() => expect(result.current.groups.length).toBe(1))
     // preview-counts should not be fetched

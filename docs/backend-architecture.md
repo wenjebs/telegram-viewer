@@ -66,7 +66,7 @@ Note: Static routes (/hidden, /favorites, /unhide-batch, /download-zip, /prepare
 
 ## Database (SQLite via aiosqlite)
 
-**media_items**: id (PK, AUTOINCREMENT), message_id, chat_id, chat_name, date, media_type, mime_type, file_size, width, height, duration, caption, file_id, access_hash, file_ref (BLOB), thumbnail_path, download_path, hidden_at, favorited_at, sender_name, faces_scanned, face_count (NULL if unscanned, 0+ if scanned). Unique on (message_id, chat_id). Indexes on date DESC, chat_id, media_type, hidden_at, favorited_at, (chat_id + date DESC), face_count.
+**media_items**: id (PK, AUTOINCREMENT), message_id, chat_id, chat_name, date, media_type, mime_type, file_size, width, height, duration, caption, file_id, access_hash, file_ref (BLOB), thumbnail_path, download_path, hidden_at, favorited_at, sender_name, faces_scanned, face_count (NULL if unscanned, 0+ if scanned). Unique on (message_id, chat_id). Indexes on date DESC, chat_id, media_type, hidden_at, favorited_at, (chat_id + date DESC), face_count, (media_type + faces_scanned).
 
 **sync_state**: chat_id (PK), chat_name, active, last_msg_id, last_synced. Tracks per-group indexing progress.
 
