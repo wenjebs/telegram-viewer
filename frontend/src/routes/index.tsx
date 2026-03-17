@@ -682,12 +682,12 @@ function Home() {
                 .map((g) => (
                   <button
                     key={g.id}
-                    className="flex items-center gap-1 rounded-full bg-emerald-600/20 px-2 py-0.5 text-xs text-emerald-300 hover:bg-emerald-600/30"
+                    className="flex items-center gap-1 rounded-full bg-chip px-2 py-0.5 text-xs text-text-soft ring-1 ring-chip-border hover:bg-surface-strong"
                     onClick={() => toggleActive(g)}
                     title="Click to deactivate"
                   >
                     <span className="max-w-28 truncate">{g.name}</span>
-                    <span className="text-emerald-400/60 hover:text-emerald-300">
+                    <span className="text-text-soft/60 hover:text-text">
                       ✕
                     </span>
                   </button>
