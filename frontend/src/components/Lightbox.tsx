@@ -1,4 +1,5 @@
-import { useEffect, useCallback } from 'react'
+import { useEffect, useRef } from 'react'
+import { useHotkeys } from 'react-hotkeys-hook'
 import type { MediaItem } from '#/api/schemas'
 import { getDownloadUrl } from '#/api/client'
 import { formatDateShort, formatFileSize } from '#/utils/format'
@@ -32,55 +33,38 @@ export default function Lightbox({
   onUnhide,
   onToggleFavorite,
 }: Props) {
-  // #region Keyboard shortcuts
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation()
-        onClose()
-      }
-      if (e.key === 'ArrowLeft' && hasPrev) {
-        e.stopPropagation()
-        onPrev()
-      }
-      if (e.key === 'ArrowRight' && hasNext) {
-        e.stopPropagation()
-        onNext()
-      }
-      if (e.key === 's' || e.key === 'S') {
-        e.stopPropagation()
-        onToggleSelect?.()
-      }
-      if (e.key === 'h' || e.key === 'H') {
-        e.stopPropagation()
-        onHide?.()
-        onUnhide?.()
-      }
-      if (e.key === 'f' || e.key === 'F') {
-        e.stopPropagation()
-        onToggleFavorite?.()
-      }
-    },
-    [
-      onClose,
-      onPrev,
-      onNext,
-      hasPrev,
-      hasNext,
-      onToggleSelect,
-      onHide,
-      onUnhide,
-      onToggleFavorite,
-    ],
-  )
+  const dialogRef = useRef<HTMLDialogElement>(null)
 
   useEffect(() => {
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [handleKeyDown])
-  // #endregion
+    dialogRef.current?.showModal()
+  }, [])
 
-  const downloadUrl = getDownloadUrl(item.id)
+  useHotkeys(
+    'left',
+    () => {
+      if (hasPrev) onPrev()
+    },
+    [hasPrev, onPrev],
+  )
+  useHotkeys(
+    'right',
+    () => {
+      if (hasNext) onNext()
+    },
+    [hasNext, onNext],
+  )
+  useHotkeys('s', () => onToggleSelect?.(), [onToggleSelect])
+  useHotkeys(
+    'h',
+    () => {
+      if (onHide) onHide()
+      else if (onUnhide) onUnhide()
+    },
+    [onHide, onUnhide],
+  )
+  useHotkeys('f', () => onToggleFavorite?.(), [onToggleFavorite])
+
+  const downloadUrl = getDownloadUrl(item.id, item.date)
   const isVideo = item.media_type === 'video'
 
   const handleDownload = () => {
@@ -94,9 +78,13 @@ export default function Lightbox({
     'absolute top-1/2 -translate-y-1/2 rounded bg-black/50 px-3 py-4 text-2xl text-white hover:bg-black/70'
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/90"
-      onClick={onClose}
+    <dialog
+      ref={dialogRef}
+      className="open:flex items-center justify-center backdrop:bg-black/90 bg-transparent p-0 m-0 max-w-none max-h-none w-screen h-screen"
+      onClose={onClose}
+      onClick={(e) => {
+        if (e.target === dialogRef.current) dialogRef.current?.close()
+      }}
     >
       <div
         className="relative max-h-[90vh] max-w-[90vw]"
@@ -158,18 +146,18 @@ export default function Lightbox({
         )}
 
         {/* Media info */}
-        <div className="mt-3 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-neutral-400">
-          <span className="rounded bg-neutral-800 px-1.5 py-0.5 uppercase">
+        <div className="mt-3 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-text-soft">
+          <span className="rounded bg-surface-alt px-1.5 py-0.5 uppercase">
             {item.media_type}
           </span>
           {item.mime_type && <span>{item.mime_type}</span>}
           {item.sender_name && (
             <span>
-              from <span className="text-neutral-200">{item.sender_name}</span>
+              from <span className="text-text">{item.sender_name}</span>
             </span>
           )}
           <span>
-            in <span className="text-neutral-200">{item.chat_name}</span>
+            in <span className="text-text">{item.chat_name}</span>
           </span>
           <span>{formatDateShort(item.date)}</span>
           {item.file_size != null && (
@@ -184,7 +172,7 @@ export default function Lightbox({
 
         <div className="mt-2 flex items-center justify-center gap-3">
           <button
-            className="rounded-md border border-neutral-600 px-6 py-2 text-sm text-white hover:bg-neutral-800"
+            className="rounded-md border border-border-soft px-6 py-2 text-sm text-text hover:bg-hover"
             onClick={handleDownload}
           >
             Download
@@ -194,12 +182,12 @@ export default function Lightbox({
               className={`rounded-md border px-4 py-2 text-sm ${
                 selected
                   ? 'border-blue-500 bg-blue-500/20 text-blue-300'
-                  : 'border-neutral-600 text-white hover:bg-neutral-800'
+                  : 'border-border-soft text-text hover:bg-hover'
               }`}
               onClick={onToggleSelect}
             >
               {selected ? 'Selected' : 'Select'}{' '}
-              <span className="text-xs text-neutral-500">S</span>
+              <span className="text-xs text-text-soft">S</span>
             </button>
           )}
           {onToggleFavorite && (
@@ -207,20 +195,20 @@ export default function Lightbox({
               className={`rounded-md border px-4 py-2 text-sm ${
                 favorited
                   ? 'border-red-500 bg-red-500/20 text-red-300'
-                  : 'border-neutral-600 text-white hover:bg-neutral-800'
+                  : 'border-border-soft text-text hover:bg-hover'
               }`}
               onClick={onToggleFavorite}
             >
-              {favorited ? '♥' : '♡'}{' '}
-              <span className="text-xs text-neutral-500">F</span>
+              {favorited ? '\u2665' : '\u2661'}{' '}
+              <span className="text-xs text-text-soft">F</span>
             </button>
           )}
           {onHide && (
             <button
-              className="rounded-md border border-neutral-600 px-4 py-2 text-sm text-white hover:bg-neutral-800"
+              className="rounded-md border border-border-soft px-4 py-2 text-sm text-text hover:bg-hover"
               onClick={onHide}
             >
-              Hide <span className="text-xs text-neutral-500">H</span>
+              Hide <span className="text-xs text-text-soft">H</span>
             </button>
           )}
           {onUnhide && (
@@ -228,17 +216,17 @@ export default function Lightbox({
               className="rounded-md border border-emerald-600 px-4 py-2 text-sm text-emerald-300 hover:bg-emerald-900/30"
               onClick={onUnhide}
             >
-              Unhide <span className="text-xs text-neutral-500">H</span>
+              Unhide <span className="text-xs text-text-soft">H</span>
             </button>
           )}
         </div>
 
         {item.caption && (
-          <p className="mt-2 text-center text-sm text-neutral-400">
+          <p className="mt-2 text-center text-sm text-text-soft">
             {item.caption}
           </p>
         )}
       </div>
-    </div>
+    </dialog>
   )
 }

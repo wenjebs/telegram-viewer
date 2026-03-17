@@ -4,6 +4,7 @@ import {
   unhideMediaBatch,
   hideMediaBatch,
   favoriteMediaBatch,
+  unfavoriteMediaBatch,
 } from '#/api/client'
 import { useZipDownload } from '#/hooks/useZipDownload'
 
@@ -18,6 +19,7 @@ interface Props {
   onUnhide?: () => void
   onHide?: () => void
   onFavorite?: () => void
+  onUnfavorite?: () => void
 }
 
 export default function SelectionBar({
@@ -31,10 +33,12 @@ export default function SelectionBar({
   onUnhide,
   onHide,
   onFavorite,
+  onUnfavorite,
 }: Props) {
   const [unhiding, setUnhiding] = useState(false)
   const [hiding, setHiding] = useState(false)
   const [favoriting, setFavoriting] = useState(false)
+  const [unfavoriting, setUnfavoriting] = useState(false)
 
   const { preparing, zipStatus, startDownload } = useZipDownload({
     onComplete: onDownload,
@@ -87,11 +91,29 @@ export default function SelectionBar({
     }
   }
 
+  const handleUnfavorite = async () => {
+    if (selectedCount === 0 || unfavoriting) return
+    setUnfavoriting(true)
+    try {
+      await unfavoriteMediaBatch([...selectedIds])
+      toast.success(`${selectedCount} items unfavorited`)
+      onUnfavorite?.()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Unfavorite failed')
+    } finally {
+      setUnfavoriting(false)
+    }
+  }
+
   // Keyboard shortcuts
   const handleHideRef = useRef(handleHide)
   handleHideRef.current = handleHide
   const handleFavoriteRef = useRef(handleFavorite)
   handleFavoriteRef.current = handleFavorite
+  const handleUnfavoriteRef = useRef(handleUnfavorite)
+  handleUnfavoriteRef.current = handleUnfavorite
+  const viewModeRef = useRef(viewMode)
+  viewModeRef.current = viewMode
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (e.key === 'h' || e.key === 'H') {
@@ -100,7 +122,11 @@ export default function SelectionBar({
     }
     if (e.key === 'f' || e.key === 'F') {
       e.preventDefault()
-      handleFavoriteRef.current()
+      if (viewModeRef.current === 'favorites') {
+        handleUnfavoriteRef.current()
+      } else {
+        handleFavoriteRef.current()
+      }
     }
   }, [])
 
@@ -113,12 +139,12 @@ export default function SelectionBar({
   // #region Render
   return (
     <div className="fixed bottom-6 left-1/2 z-40 -translate-x-1/2 animate-[slideUp_150ms_ease-out]">
-      <div className="flex items-center gap-3 rounded-xl border border-neutral-700 bg-neutral-900/95 px-5 py-2.5 shadow-2xl backdrop-blur-sm">
-        <span className="text-sm text-neutral-300">
-          <span className="font-semibold text-white">{selectedCount}</span>{' '}
+      <div className="flex items-center gap-3 rounded-xl border border-border bg-surface/95 px-5 py-2.5 shadow-2xl backdrop-blur-sm">
+        <span className="text-sm text-text">
+          <span className="font-semibold text-text">{selectedCount}</span>{' '}
           selected
         </span>
-        <div className="h-4 w-px bg-neutral-700" />
+        <div className="h-4 w-px bg-border" />
         <button
           className="text-sm text-sky-400 hover:text-sky-300"
           onClick={onSelectAll}
@@ -143,21 +169,37 @@ export default function SelectionBar({
           </button>
         ) : (
           <>
+            {viewMode === 'favorites' ? (
+              <button
+                className="rounded-lg bg-surface-strong px-4 py-1.5 text-sm font-semibold text-white hover:bg-surface-alt disabled:opacity-50"
+                onClick={handleUnfavorite}
+                disabled={selectedCount === 0 || unfavoriting}
+              >
+                {unfavoriting ? (
+                  'Removing...'
+                ) : (
+                  <>
+                    Unfavorite <span className="text-xs text-white/40">F</span>
+                  </>
+                )}
+              </button>
+            ) : (
+              <button
+                className="rounded-lg bg-red-600/80 px-4 py-1.5 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-50"
+                onClick={handleFavorite}
+                disabled={selectedCount === 0 || favoriting}
+              >
+                {favoriting ? (
+                  'Saving...'
+                ) : (
+                  <>
+                    ♥ Favorite <span className="text-xs text-white/40">F</span>
+                  </>
+                )}
+              </button>
+            )}
             <button
-              className="rounded-lg bg-red-600/80 px-4 py-1.5 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-50"
-              onClick={handleFavorite}
-              disabled={selectedCount === 0 || favoriting}
-            >
-              {favoriting ? (
-                'Saving...'
-              ) : (
-                <>
-                  ♥ Favorite <span className="text-xs text-white/40">F</span>
-                </>
-              )}
-            </button>
-            <button
-              className="rounded-lg bg-neutral-700 px-4 py-1.5 text-sm font-semibold text-white hover:bg-neutral-600 disabled:opacity-50"
+              className="rounded-lg bg-surface-strong px-4 py-1.5 text-sm font-semibold text-white hover:bg-surface-strong disabled:opacity-50"
               onClick={handleHide}
               disabled={selectedCount === 0 || hiding}
             >
@@ -203,7 +245,7 @@ export default function SelectionBar({
           </>
         )}
         <button
-          className="text-sm text-neutral-400 hover:text-neutral-200"
+          className="text-sm text-text-soft hover:text-text"
           onClick={onCancel}
         >
           ✕
