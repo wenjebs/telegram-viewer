@@ -8,6 +8,7 @@ export interface MediaFilters {
   type?: string
   dateFrom?: string
   dateTo?: string
+  faces?: string
 }
 
 export function useMedia(filters: MediaFilters, enabled = true) {

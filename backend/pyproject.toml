@@ -14,6 +14,8 @@ dependencies = [
     "numpy>=2.4.3",
     "scikit-learn>=1.8.0",
     "pillow>=12.1.1",
+    "cachetools>=7.0.5",
+    "tenacity>=9.1.4",
 ]
 
 [project.optional-dependencies]
@@ -25,9 +27,11 @@ dev = [
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+pythonpath = [".", "tests"]
 
 [dependency-groups]
 dev = [
+    "pytest-cov>=7.0.0",
     "ruff>=0.15.6",
     "ty>=0.0.23",
 ]

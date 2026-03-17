@@ -15,11 +15,12 @@ FROM oven/bun:1-slim
 
 WORKDIR /app
 
-# Copy built output and node_modules (server needs deps at runtime)
+# Copy built output, entry script, and node_modules (server needs deps at runtime)
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/package.json ./
+COPY --from=build /app/docker-entry.ts ./
 
 EXPOSE 3000
 
-CMD ["bun", "run", "dist/server/server.js"]
+CMD ["bun", "run", "docker-entry.ts"]

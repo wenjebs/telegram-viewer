@@ -15,6 +15,7 @@ from database import (
     get_sync_state,
     get_all_sync_states,
     get_all_dialogs,
+    get_media_counts_by_chat,
     clear_chat_media,
     clear_all_media,
     hide_dialog,
@@ -38,7 +39,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/groups", tags=["groups"])
 
 
-def _merge_sync_states(dialogs: list[dict], state_map: dict[int, dict]) -> list[dict]:
+def _merge_sync_states(
+    dialogs: list[dict],
+    state_map: dict[int, dict],
+    media_counts: dict[int, int] | None = None,
+) -> list[dict]:
     result = []
     for d in dialogs:
         entry = {
@@ -51,6 +56,8 @@ def _merge_sync_states(dialogs: list[dict], state_map: dict[int, dict]) -> list[
         state = state_map.get(d["id"])
         entry["active"] = bool(state and state["active"]) if state else False
         entry["last_synced"] = state["last_synced"] if state else None
+        if media_counts is not None:
+            entry["media_count"] = media_counts.get(d["id"], 0)
         result.append(entry)
     return result
 
@@ -84,10 +91,11 @@ async def list_groups(
         # Trigger non-blocking background refresh if in-memory cache is stale
         fire_and_forget(tg.refresh_dialogs(), bg_tasks)
 
-    # Merge sync state
+    # Merge sync state + media counts
     states = await get_all_sync_states(db)
     state_map = {s["chat_id"]: s for s in states}
-    return _merge_sync_states(dialogs, state_map)
+    media_counts = await get_media_counts_by_chat(db)
+    return _merge_sync_states(dialogs, state_map, media_counts)
 
 
 @router.post("/refresh")
@@ -163,6 +171,18 @@ async def preview_counts(
             result[str(cid)] = counts
 
     await asyncio.gather(*[_count(s) for s in to_fetch])
+
+    # Strip document counts from the response — many documents (PDFs, ZIPs,
+    # stickers, GIFs) are skipped during sync so including them inflates the
+    # "new" badge permanently.
+    for key, counts in result.items():
+        if counts is not None:
+            result[key] = {
+                "photos": counts["photos"],
+                "videos": counts["videos"],
+                "documents": 0,
+                "total": counts["photos"] + counts["videos"],
+            }
     return result
 
 

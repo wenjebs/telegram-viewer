@@ -1,5 +1,4 @@
 import { useState, useCallback, useRef } from 'react'
-import type { MediaItem } from '#/api/schemas'
 
 export function useSelectMode() {
   // #region State
@@ -39,7 +38,7 @@ export function useSelectMode() {
   }, [])
 
   const toggleRange = useCallback(
-    (id: number, items: MediaItem[]) => {
+    (id: number, items: { id: number }[]) => {
       const anchor = lastClickedIdRef.current
       if (anchor == null) {
         // No anchor, just toggle single
@@ -66,11 +65,11 @@ export function useSelectMode() {
     [toggle],
   )
 
-  const selectAll = useCallback((items: MediaItem[]) => {
+  const selectAll = useCallback((items: { id: number }[]) => {
     setSelectedIds(new Set(items.map((i) => i.id)))
   }, [])
 
-  const selectDateGroup = useCallback((items: MediaItem[]) => {
+  const selectDateGroup = useCallback((items: { id: number }[]) => {
     setSelectedIds((prev) => {
       const next = new Set(prev)
       const allSelected = items.every((i) => next.has(i.id))

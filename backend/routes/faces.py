@@ -6,8 +6,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
+
+import numpy as np
 
 from database import (
     get_face_scan_state,
@@ -15,14 +17,16 @@ from database import (
     get_person_count,
     get_all_persons,
     get_person,
+    get_person_embeddings,
     rename_person,
     merge_persons,
+    merge_persons_batch,
     remove_face_from_person,
     get_person_media_page,
 )
 from deps import get_db, get_tg, get_background_tasks
 from face_scanner import scan_faces
-from utils import fire_and_forget
+from utils import fire_and_forget, parse_cursor, build_media_response
 
 if TYPE_CHECKING:
     import aiosqlite
@@ -34,50 +38,17 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/faces", tags=["faces"])
 
 
-# region Helpers
-def _parse_cursor(cursor: str | None) -> tuple[int | None, str | None]:
-    """Parse a cursor string into (cursor_id, cursor_value).
-
-    Supports composite cursors ("value|id") and plain id cursors ("123").
-    Raises HTTPException 400 on malformed input.
-    """
-    if cursor is None:
-        return None, None
-    try:
-        if "|" in cursor:
-            value, cid = cursor.rsplit("|", 1)
-            return int(cid), value
-        return int(cursor), None
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid cursor")
-
-
-def _build_media_response(
-    items: list[dict],
-    limit: int,
-    *,
-    cursor_column: str = "date",
-) -> dict:
-    """Normalize dates, strip non-serializable fields, and compute next_cursor."""
-    for item in items:
-        if " " in item["date"]:
-            item["date"] = item["date"].replace(" ", "T", 1)
-        item.pop("file_ref", None)
-    if not items or len(items) < limit:
-        next_cursor = None
-    else:
-        last = items[-1]
-        next_cursor = f"{last[cursor_column]}|{last['id']}"
-    return {"items": items, "next_cursor": next_cursor}
-
-
-# endregion
 
 
 # region Pydantic models
 class MergePersonsRequest(BaseModel):
     keep_id: int
     merge_id: int
+
+
+class MergeBatchRequest(BaseModel):
+    keep_id: int
+    merge_ids: list[int]
 
 
 class RenamePersonRequest(BaseModel):
@@ -97,10 +68,32 @@ async def _run_scan(
     await scan_faces(db, tg, force_rescan=force)
 
 
+async def maybe_start_face_scan(
+    db: aiosqlite.Connection,
+    tg: TelegramClientWrapper,
+    bg_tasks: set[asyncio.Task],
+    force: bool = False,
+) -> bool:
+    """Start a face scan if one isn't already running. Returns True if started."""
+    state = await get_face_scan_state(db)
+    if state.get("status") in ("scanning", "clustering"):
+        scan_running = any(
+            not t.done() and t.get_name().startswith("face_scan") for t in bg_tasks
+        )
+        if scan_running:
+            return False
+        # Stale state — reset to idle so scan can resume
+        await update_face_scan_state(db, status="idle")
+    task = fire_and_forget(_run_scan(db, tg, force), bg_tasks)
+    task.set_name("face_scan")
+    return True
+
+
 # endregion
 
 
 # region Routes — static routes first
+
 
 @router.get("/scan-status")
 async def scan_status(db: aiosqlite.Connection = Depends(get_db)):
@@ -121,23 +114,15 @@ async def start_scan(
     tg: TelegramClientWrapper = Depends(get_tg),
     bg_tasks: set[asyncio.Task] = Depends(get_background_tasks),
 ):
-    state = await get_face_scan_state(db)
-    if state.get("status") in ("scanning", "clustering"):
-        # Check if a scan task is actually running — if not, the state is stale
-        # from a crashed/restarted server. Reset it so the scan can resume.
-        scan_running = any(
-            not t.done() and t.get_name().startswith("face_scan")
-            for t in bg_tasks
-        )
-        if scan_running:
-            return JSONResponse(
-                status_code=409,
-                content={"detail": "Scan already in progress"},
-            )
-        # Stale state — reset to idle so scan can resume
-        await update_face_scan_state(db, status="idle")
-    task = fire_and_forget(_run_scan(db, tg, force), bg_tasks)
-    task.set_name("face_scan")
+    started = await maybe_start_face_scan(db, tg, bg_tasks, force=force)
+    if not started:
+        state = await get_face_scan_state(db)
+        return {
+            "started": False,
+            "status": state.get("status", "idle"),
+            "scanned": state.get("scanned_count", 0),
+            "total": state.get("total_count", 0),
+        }
     return {"started": True}
 
 
@@ -156,10 +141,82 @@ async def merge_persons_endpoint(
     return {"success": True}
 
 
+@router.post("/persons/merge-batch")
+async def merge_persons_batch_endpoint(
+    req: MergeBatchRequest,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    if req.keep_id in req.merge_ids:
+        raise HTTPException(status_code=400, detail="Cannot merge a person with itself")
+    await merge_persons_batch(db, req.keep_id, req.merge_ids)
+    return {"success": True}
+
+
+@router.get("/persons/similar-groups")
+async def similar_groups(
+    threshold: float = Query(0.4, ge=0.0, le=1.0),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Return groups of persons whose representative faces are similar.
+
+    Uses cosine similarity between representative face embeddings.
+    The default threshold (0.4) is intentionally looser than the DBSCAN
+    clustering eps (0.35 cosine distance = 0.65 similarity) to catch
+    persons that were split into separate clusters.
+    """
+    rows = await get_person_embeddings(db)
+    if len(rows) < 2:
+        return {"groups": []}
+
+    person_ids = [r["person_id"] for r in rows]
+    embeddings = np.array(
+        [np.frombuffer(r["embedding"], dtype=np.float32) for r in rows]
+    )
+    # L2-normalize
+    norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+    norms[norms == 0] = 1.0
+    embeddings = embeddings / norms
+
+    # Pairwise cosine similarity (dot product of normalized vectors)
+    sim_matrix = embeddings @ embeddings.T
+
+    # Union-find to group similar persons
+    parent = list(range(len(person_ids)))
+
+    def find(x: int) -> int:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a: int, b: int) -> None:
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[ra] = rb
+
+    for i in range(len(person_ids)):
+        for j in range(i + 1, len(person_ids)):
+            if sim_matrix[i, j] >= threshold:
+                union(i, j)
+
+    # Collect groups (only groups with 2+ members)
+    group_map: dict[int, list[int]] = {}
+    for idx, pid in enumerate(person_ids):
+        root = find(idx)
+        group_map.setdefault(root, []).append(pid)
+
+    groups = [g for g in group_map.values() if len(g) >= 2]
+    # Sort groups by size descending
+    groups.sort(key=len, reverse=True)
+
+    return {"groups": groups}
+
+
 # endregion
 
 
 # region Routes — parameterized
+
 
 @router.get("/persons/{person_id}")
 async def get_person_endpoint(
@@ -199,7 +256,7 @@ async def person_media(
     cursor: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
 ):
-    cursor_id, cursor_value = _parse_cursor(cursor)
+    cursor_id, cursor_value = parse_cursor(cursor)
     items = await get_person_media_page(
         db,
         person_id,
@@ -207,7 +264,7 @@ async def person_media(
         cursor_value=cursor_value,
         limit=limit,
     )
-    return _build_media_response(items, limit, cursor_column="date")
+    return build_media_response(items, limit, cursor_column="date")
 
 
 @router.get("/{face_id}/crop")
@@ -215,9 +272,7 @@ async def get_face_crop(
     face_id: int,
     db: aiosqlite.Connection = Depends(get_db),
 ):
-    row = await db.execute(
-        "SELECT crop_path FROM faces WHERE id = ?", (face_id,)
-    )
+    row = await db.execute("SELECT crop_path FROM faces WHERE id = ?", (face_id,))
     result = await row.fetchone()
     if not result or not result[0]:
         raise HTTPException(status_code=404, detail="Face crop not found")

@@ -142,10 +142,10 @@ async def index_chat(
                 async for msg in tg.client.iter_messages(
                     chat_id, min_id=current_min_id, filter=filt
                 ):
+                    max_msg_id = max(max_msg_id, msg.id)
                     item = _extract_media(msg, chat_id, chat_name)
                     if item:
                         batch.append((item, msg))
-                        max_msg_id = max(max_msg_id, msg.id)
                         progress += 1
 
                         if len(batch) >= BATCH_SIZE:

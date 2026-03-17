@@ -132,7 +132,15 @@ export default function Sidebar({
   const [searchQuery, setSearchQueryLocal] = useState(initialSearchQuery)
   const deferredQuery = useDeferredValue(searchQuery)
   const [chatsCollapsed, setChatsCollapsed] = useState(false)
+  const [hoveredGroup, setHoveredGroup] = useState<Group | null>(null)
   useHotkeys('c', () => setChatsCollapsed((p) => !p))
+  useHotkeys(
+    'h',
+    () => {
+      if (hoveredGroup && onHideDialog) onHideDialog(hoveredGroup)
+    },
+    [hoveredGroup, onHideDialog],
+  )
   const dragging = useRef(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
@@ -334,15 +342,19 @@ export default function Sidebar({
             : filteredGroups.map((g) => (
                 <div
                   key={g.id}
-                  className={`group flex cursor-pointer items-center gap-2 rounded-md border-l-2 px-2 py-1.5 text-sm transition-colors ${
+                  className={`group mb-1 flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${
                     g.active
-                      ? 'border-sky-500 bg-sky-500/5 hover:bg-sky-500/10'
-                      : 'border-transparent opacity-50 hover:bg-hover hover:opacity-75'
+                      ? 'bg-hover/50 hover:bg-hover'
+                      : 'opacity-50 hover:bg-hover hover:opacity-75'
                   }`}
                   onClick={() => onToggleGroup(g)}
-                  title={
-                    g.active ? 'Click to deactivate' : 'Click to activate'
+                  onMouseEnter={() => setHoveredGroup(g)}
+                  onMouseLeave={() =>
+                    setHoveredGroup((prev) =>
+                      prev?.id === g.id ? null : prev,
+                    )
                   }
+                  title={g.active ? 'Click to deactivate' : 'Click to activate'}
                 >
                   {g.type && CHAT_TYPE_ICONS[g.type] && (
                     <span className="text-xs">{CHAT_TYPE_ICONS[g.type]}</span>
@@ -353,9 +365,7 @@ export default function Sidebar({
                       title={`${g.media_count} media synced`}
                     />
                   )}
-                  <span className="flex-1 truncate text-left">
-                    {g.name}
-                  </span>
+                  <span className="flex-1 truncate text-left">{g.name}</span>
                   {syncStatuses[g.id]?.status === 'syncing' &&
                     syncStatuses[g.id].total > 0 && (
                       <span className="ml-auto shrink-0 text-xs text-sky-400">

@@ -691,6 +691,16 @@ async def get_media_count(db: aiosqlite.Connection) -> int:
     return row[0] if row else 0
 
 
+async def get_media_counts_by_chat(db: aiosqlite.Connection) -> dict[int, int]:
+    cursor = await db.execute(
+        "SELECT chat_id, COUNT(*) FROM media_items"
+        " WHERE hidden_at IS NULL"
+        " GROUP BY chat_id"
+    )
+    rows = await cursor.fetchall()
+    return {row[0]: row[1] for row in rows}
+
+
 # endregion
 
 

@@ -34,10 +34,7 @@ export default function PersonMergeModal({
       <div className="max-h-[80vh] w-full max-w-md overflow-y-auto rounded-lg bg-surface p-4">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-medium text-text">Merge with...</h2>
-          <button
-            className="text-text-soft hover:text-text"
-            onClick={onClose}
-          >
+          <button className="text-text-soft hover:text-text" onClick={onClose}>
             <svg
               className="h-5 w-5"
               viewBox="0 0 20 20"

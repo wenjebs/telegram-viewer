@@ -120,7 +120,7 @@ async def test_preview_counts(mock_tg, real_db_app, mock_bg_tasks, client):
     assert resp.status_code == 200
     data = resp.json()
     assert "1" in data
-    assert data["1"]["total"] == 15  # 5 photos + 5 videos + 5 documents
+    assert data["1"]["total"] == 10  # 5 photos + 5 videos (documents excluded)
 
 
 # ---------------------------------------------------------------------------

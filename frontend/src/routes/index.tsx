@@ -687,9 +687,7 @@ function Home() {
                     title="Click to deactivate"
                   >
                     <span className="max-w-28 truncate">{g.name}</span>
-                    <span className="text-text-soft/60 hover:text-text">
-                      ✕
-                    </span>
+                    <span className="text-text-soft/60 hover:text-text">✕</span>
                   </button>
                 ))}
             </div>

@@ -46,12 +46,18 @@ export function usePersonMedia(personId: number | null, enabled = false) {
     [queryClient, queryKey],
   )
 
+  const removeItem = useCallback(
+    (id: number) => removeItems([id]),
+    [removeItems],
+  )
+
   return {
     items,
     loading: query.isLoading || query.isFetchingNextPage,
     error: query.error ? String(query.error) : null,
     hasMore: query.hasNextPage ?? false,
     fetchNextPage: query.fetchNextPage,
+    removeItem,
     removeItems,
   }
 }

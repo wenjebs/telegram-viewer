@@ -1,20 +1,32 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { getPersons } from '#/api/client'
+import { getPersons, getSimilarGroups } from '#/api/client'
 
-const QUERY_KEY = ['faces', 'persons'] as const
+const PERSONS_KEY = ['faces', 'persons'] as const
+const SIMILAR_PREFIX = ['faces', 'persons', 'similar-groups'] as const
 
-export function usePersons(enabled = false) {
+export function usePersons(enabled = false, similarityThreshold = 0.4) {
   const queryClient = useQueryClient()
   const query = useQuery({
-    queryKey: QUERY_KEY,
+    queryKey: PERSONS_KEY,
     queryFn: getPersons,
     enabled,
+  })
+
+  const threshold = similarityThreshold
+  const similarQuery = useQuery({
+    queryKey: [...SIMILAR_PREFIX, threshold] as const,
+    queryFn: () => getSimilarGroups(threshold),
+    enabled: enabled && (query.data?.length ?? 0) >= 2,
   })
 
   return {
     persons: query.data ?? [],
     loading: query.isLoading,
+    similarGroups: similarQuery.data?.groups ?? [],
     refetch: query.refetch,
-    invalidate: () => queryClient.invalidateQueries({ queryKey: QUERY_KEY }),
+    invalidate: () => {
+      queryClient.invalidateQueries({ queryKey: PERSONS_KEY })
+      queryClient.invalidateQueries({ queryKey: SIMILAR_PREFIX })
+    },
   }
 }

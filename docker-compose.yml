@@ -2,9 +2,10 @@ services:
   caddy:
     image: caddy:2-alpine
     ports:
-      - "${PORT:-8080}:80"
+      - "443:443"
     volumes:
       - ./Caddyfile.docker:/etc/caddy/Caddyfile:ro
+      - ~/Library/Application Support/Caddy/pki:/data/caddy/pki
     depends_on:
       - backend
       - frontend
@@ -18,7 +19,7 @@ services:
       DB_PATH: /data/telegram_viewer.db
       SESSION_PATH: /data/tg_session
       CACHE_DIR: /data/cache
-      CORS_ORIGINS: "http://localhost:${PORT:-8080}"
+      CORS_ORIGINS: "https://tele.view"
     volumes:
       - app-data:/data
       - insightface-models:/root/.insightface

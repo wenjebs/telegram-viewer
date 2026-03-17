@@ -51,10 +51,7 @@ function NotFound() {
         <p className="mt-2 text-text-soft">
           The page you're looking for doesn't exist.
         </p>
-        <Link
-          to="/"
-          className="mt-4 inline-block text-accent hover:underline"
-        >
+        <Link to="/" className="mt-4 inline-block text-accent hover:underline">
           Go home
         </Link>
       </div>

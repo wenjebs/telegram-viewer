@@ -11,13 +11,12 @@
     "target": "ES2022",
     "jsx": "react-jsx",
     "module": "ESNext",
-    "baseUrl": ".",
     "paths": {
       "#/*": ["./src/*"],
       "@/*": ["./src/*"]
     },
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
-    "types": ["vite/client"],
+    "types": ["vite/client", "vitest/globals"],
 
     /* Bundler mode */
     "moduleResolution": "bundler",

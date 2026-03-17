@@ -15,6 +15,7 @@ export const Group = z.object({
   active: z.boolean(),
   last_synced: z.string().nullable(),
   hidden_at: z.string().nullable(),
+  media_count: z.number().optional(),
 })
 
 export const MediaItem = z.object({
@@ -73,6 +74,15 @@ export const ZipStatusResponse = z.object({
   error: z.string().nullable(),
 })
 
+export const PreviewCountItem = z.object({
+  photos: z.number(),
+  videos: z.number(),
+  documents: z.number(),
+  total: z.number(),
+})
+
+export const PreviewCounts = z.record(z.string(), PreviewCountItem.nullable())
+
 // --- Inferred types (exported for consumers) ---
 export type AuthStatus = z.infer<typeof AuthStatus>
 export type Group = z.infer<typeof Group>
@@ -83,3 +93,5 @@ export type Person = z.infer<typeof Person>
 export type FaceScanStatus = z.infer<typeof FaceScanStatus>
 export type ZipJobResponse = z.infer<typeof ZipJobResponse>
 export type ZipStatusResponse = z.infer<typeof ZipStatusResponse>
+export type PreviewCountItem = z.infer<typeof PreviewCountItem>
+export type PreviewCounts = z.infer<typeof PreviewCounts>

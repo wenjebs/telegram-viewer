@@ -10,13 +10,9 @@ import {
 
 interface UseGroupsOptions {
   enabled?: boolean
-  displayGroupIds: Set<number>
 }
 
-export function useGroups({
-  enabled = true,
-  displayGroupIds,
-}: UseGroupsOptions) {
+export function useGroups({ enabled = true }: UseGroupsOptions = {}) {
   const queryClient = useQueryClient()
 
   const {
@@ -64,14 +60,6 @@ export function useGroups({
     staleTime: 5 * 60 * 1000,
   })
 
-  const displayFilteredGroupIds = useMemo(
-    () =>
-      displayGroupIds.size === 0
-        ? activeGroupIds
-        : activeGroupIds.filter((id) => displayGroupIds.has(id)),
-    [activeGroupIds, displayGroupIds],
-  )
-
   return {
     groups,
     loading,
@@ -79,7 +67,6 @@ export function useGroups({
     toggleActive,
     unsyncGroup,
     activeGroupIds,
-    displayFilteredGroupIds,
     refetch,
     previewCounts,
   }

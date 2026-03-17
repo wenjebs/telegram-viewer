@@ -61,10 +61,7 @@ export default function ShortcutsModal({ onClose }: Props) {
       <div className="max-h-[80vh] w-full max-w-sm overflow-y-auto rounded-lg bg-surface p-5">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-sm font-medium text-text">Keyboard shortcuts</h2>
-          <button
-            className="text-text-soft hover:text-text"
-            onClick={onClose}
-          >
+          <button className="text-text-soft hover:text-text" onClick={onClose}>
             <svg
               className="h-5 w-5"
               viewBox="0 0 20 20"
@@ -89,9 +86,7 @@ export default function ShortcutsModal({ onClose }: Props) {
                     key={s.description}
                     className="flex items-center justify-between"
                   >
-                    <span className="text-sm text-text">
-                      {s.description}
-                    </span>
+                    <span className="text-sm text-text">{s.description}</span>
                     <kbd className="ml-4 shrink-0 rounded bg-surface-alt px-2 py-0.5 text-xs font-mono text-text-soft">
                       {s.key}
                     </kbd>

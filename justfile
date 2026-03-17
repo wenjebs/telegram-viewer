@@ -45,9 +45,18 @@ install:
     cd backend && uv sync && uv pip install -e ".[dev]"
     cd frontend && bun install
 
-# Build and start with Docker Compose
+# Build and start with Docker Compose (HTTPS via tele.view)
 docker:
-	docker compose up --build
+    #!/usr/bin/env bash
+    # Stop dev servers if running (they bind the same ports)
+    caddy stop 2>/dev/null || true
+    lsof -ti :443 -sTCP:LISTEN | xargs kill -9 2>/dev/null || true
+    docker compose down 2>/dev/null || true
+    if ! grep -q 'tele.view' /etc/hosts; then
+      echo "Adding tele.view to /etc/hosts (requires password):"
+      sudo sh -c 'echo "127.0.0.1 tele.view" >> /etc/hosts'
+    fi
+    docker compose up --build
 
 # Start Docker Compose (no rebuild)
 docker-up:

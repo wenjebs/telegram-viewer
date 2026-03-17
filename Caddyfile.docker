@@ -1,4 +1,8 @@
-:80 {
+{
+    local_certs
+}
+
+https://tele.view {
     handle /api/* {
         uri strip_prefix /api
         reverse_proxy backend:8000
