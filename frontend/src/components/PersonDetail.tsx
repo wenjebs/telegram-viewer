@@ -28,20 +28,23 @@ export default function PersonDetail({
   }
 
   return (
-    <div className="flex items-center gap-3 border-b border-neutral-800 p-4">
-      <button className="text-neutral-400 hover:text-white" onClick={onBack}>
+    <div className="flex items-center gap-3 border-b border-border p-4">
+      <button className="text-text-soft hover:text-text" onClick={onBack}>
         <ArrowLeft className="h-5 w-5" />
       </button>
 
-      <div className="h-12 w-12 shrink-0 overflow-hidden rounded-full bg-neutral-800">
+      <div className="h-12 w-12 shrink-0 overflow-hidden rounded-full bg-surface-alt">
         {person.representative_face_id != null ? (
           <img
-            src={getFaceCropUrl(person.representative_face_id)}
+            src={getFaceCropUrl(
+              person.representative_face_id,
+              person.updated_at,
+            )}
             alt={person.display_name}
             className="h-full w-full object-cover"
           />
         ) : (
-          <div className="flex h-full w-full items-center justify-center text-lg text-neutral-500">
+          <div className="flex h-full w-full items-center justify-center text-lg text-text-soft">
             ?
           </div>
         )}
@@ -61,11 +64,11 @@ export default function PersonDetail({
               }
             }}
             onBlur={save}
-            className="rounded bg-neutral-800 px-2 py-1 text-sm text-white outline-none ring-1 ring-neutral-600 focus:ring-sky-500"
+            className="rounded bg-surface-alt px-2 py-1 text-sm text-text outline-none ring-1 ring-border-soft focus:ring-ring"
           />
         ) : (
           <button
-            className="text-sm font-medium text-white hover:text-sky-400"
+            className="text-sm font-medium text-text hover:text-sky-400"
             onClick={() => {
               setNameInput(person.display_name)
               setEditing(true)
@@ -74,13 +77,13 @@ export default function PersonDetail({
             {person.display_name}
           </button>
         )}
-        <p className="text-xs text-neutral-500">
+        <p className="text-xs text-text-soft">
           {person.face_count === 1 ? '1 photo' : `${person.face_count} photos`}
         </p>
       </div>
 
       <button
-        className="rounded px-2 py-1 text-xs text-neutral-400 hover:bg-neutral-800 hover:text-white"
+        className="rounded px-2 py-1 text-xs text-text-soft hover:bg-hover hover:text-text"
         onClick={onMerge}
       >
         Merge...
