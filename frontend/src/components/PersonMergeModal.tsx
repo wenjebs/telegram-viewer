@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import type { Person } from '#/api/schemas'
 import { getFaceCropUrl } from '#/api/client'
 
@@ -14,20 +15,27 @@ export default function PersonMergeModal({
   onMerge,
   onClose,
 }: Props) {
+  const dialogRef = useRef<HTMLDialogElement>(null)
   const others = persons.filter((p) => p.id !== currentPersonId)
 
+  useEffect(() => {
+    dialogRef.current?.showModal()
+  }, [])
+
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+    <dialog
+      ref={dialogRef}
+      className="open:flex items-center justify-center backdrop:bg-black/60 bg-transparent p-0 m-0 max-w-none max-h-none w-screen h-screen"
+      onClose={onClose}
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose()
+        if (e.target === dialogRef.current) dialogRef.current?.close()
       }}
     >
-      <div className="max-h-[80vh] w-full max-w-md overflow-y-auto rounded-lg bg-neutral-900 p-4">
+      <div className="max-h-[80vh] w-full max-w-md overflow-y-auto rounded-lg bg-surface p-4">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-medium text-white">Merge with...</h2>
+          <h2 className="text-sm font-medium text-text">Merge with...</h2>
           <button
-            className="text-neutral-400 hover:text-white"
+            className="text-text-soft hover:text-text"
             onClick={onClose}
           >
             <svg
@@ -43,7 +51,7 @@ export default function PersonMergeModal({
         </div>
 
         {others.length === 0 ? (
-          <p className="py-4 text-center text-sm text-neutral-500">
+          <p className="py-4 text-center text-sm text-text-soft">
             No other people to merge with.
           </p>
         ) : (
@@ -51,28 +59,31 @@ export default function PersonMergeModal({
             {others.map((person) => (
               <button
                 key={person.id}
-                className="flex items-center gap-3 rounded px-2 py-2 hover:bg-neutral-800"
+                className="flex items-center gap-3 rounded px-2 py-2 hover:bg-hover"
                 onClick={() => onMerge(person.id)}
               >
-                <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full bg-neutral-800">
+                <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full bg-surface-alt">
                   {person.representative_face_id != null ? (
                     <img
-                      src={getFaceCropUrl(person.representative_face_id)}
+                      src={getFaceCropUrl(
+                        person.representative_face_id,
+                        person.updated_at,
+                      )}
                       alt={person.display_name}
                       className="h-full w-full object-cover"
                       loading="lazy"
                     />
                   ) : (
-                    <div className="flex h-full w-full items-center justify-center text-sm text-neutral-500">
+                    <div className="flex h-full w-full items-center justify-center text-sm text-text-soft">
                       ?
                     </div>
                   )}
                 </div>
                 <div className="min-w-0 text-left">
-                  <p className="truncate text-sm text-neutral-300">
+                  <p className="truncate text-sm text-text">
                     {person.display_name}
                   </p>
-                  <p className="text-xs text-neutral-500">
+                  <p className="text-xs text-text-soft">
                     {person.face_count === 1
                       ? '1 photo'
                       : `${person.face_count} photos`}
@@ -83,6 +94,6 @@ export default function PersonMergeModal({
           </div>
         )}
       </div>
-    </div>
+    </dialog>
   )
 }
