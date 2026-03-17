@@ -1,0 +1,35 @@
+services:
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "${PORT:-8080}:80"
+    volumes:
+      - ./Caddyfile.docker:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - backend
+      - frontend
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    environment:
+      TELEGRAM_API_ID: ${TELEGRAM_API_ID}
+      TELEGRAM_API_HASH: ${TELEGRAM_API_HASH}
+      DB_PATH: /data/telegram_viewer.db
+      SESSION_PATH: /data/tg_session
+      CACHE_DIR: /data/cache
+      CORS_ORIGINS: "http://localhost:${PORT:-8080}"
+    volumes:
+      - app-data:/data
+      - insightface-models:/root/.insightface
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    environment:
+      PORT: 3000
+    restart: unless-stopped
+
+volumes:
+  app-data:
+  insightface-models:
