@@ -3,11 +3,13 @@ from __future__ import annotations
 import sqlite3
 
 import aiosqlite
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
+
+from utils import utc_now_iso
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS media_items (
-    id              INTEGER PRIMARY KEY,
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
     message_id      INTEGER NOT NULL,
     chat_id         INTEGER NOT NULL,
     chat_name       TEXT NOT NULL,
@@ -23,6 +25,12 @@ CREATE TABLE IF NOT EXISTS media_items (
     access_hash     INTEGER,
     file_ref        BLOB,
     thumbnail_path  TEXT,
+    download_path   TEXT,
+    hidden_at       DATETIME,
+    favorited_at    DATETIME,
+    sender_name     TEXT,
+    faces_scanned   INTEGER DEFAULT 0,
+    face_count      INTEGER DEFAULT NULL,
     UNIQUE(message_id, chat_id)
 );
 
@@ -47,6 +55,7 @@ CREATE TABLE IF NOT EXISTS dialogs (
     type            TEXT NOT NULL,
     unread_count    INTEGER NOT NULL DEFAULT 0,
     last_message_date DATETIME,
+    hidden_at       DATETIME,
     updated_at      DATETIME NOT NULL
 );
 
@@ -60,7 +69,7 @@ CREATE TABLE IF NOT EXISTS persons (
 );
 
 CREATE TABLE IF NOT EXISTS faces (
-    id              INTEGER PRIMARY KEY,
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
     media_id        INTEGER NOT NULL,
     person_id       INTEGER,
     embedding       BLOB NOT NULL,
@@ -75,6 +84,7 @@ CREATE TABLE IF NOT EXISTS faces (
 
 CREATE INDEX IF NOT EXISTS idx_faces_media ON faces(media_id);
 CREATE INDEX IF NOT EXISTS idx_faces_person ON faces(person_id);
+CREATE INDEX IF NOT EXISTS idx_media_unscanned ON media_items(media_type, faces_scanned);
 
 CREATE TABLE IF NOT EXISTS face_scan_state (
     id              INTEGER PRIMARY KEY DEFAULT 1,
@@ -89,6 +99,67 @@ CREATE TABLE IF NOT EXISTS face_scan_state (
 
 
 # region Init
+async def _migrate_to_autoincrement(db: aiosqlite.Connection) -> None:
+    """Recreate media_items and faces with AUTOINCREMENT to prevent ID reuse."""
+    # Check if migration is needed (sqlite_sequence exists only with AUTOINCREMENT)
+    cursor = await db.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='sqlite_sequence'"
+    )
+    has_sequence = await cursor.fetchone()
+    if has_sequence:
+        cursor = await db.execute(
+            "SELECT name FROM sqlite_sequence WHERE name='media_items'"
+        )
+        if await cursor.fetchone():
+            return  # Already migrated
+
+    # Run both table migrations in a single transaction so a crash
+    # can't leave the DB partially migrated.
+    stmts = [
+        # -- media_items --
+        """CREATE TABLE media_items_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            message_id INTEGER NOT NULL, chat_id INTEGER NOT NULL,
+            chat_name TEXT NOT NULL, date DATETIME NOT NULL,
+            media_type TEXT NOT NULL, mime_type TEXT, file_size INTEGER,
+            width INTEGER, height INTEGER, duration REAL, caption TEXT,
+            file_id INTEGER, access_hash INTEGER, file_ref BLOB,
+            thumbnail_path TEXT, download_path TEXT, hidden_at DATETIME,
+            favorited_at DATETIME, sender_name TEXT,
+            faces_scanned INTEGER DEFAULT 0,
+            face_count INTEGER DEFAULT NULL,
+            UNIQUE(message_id, chat_id)
+        )""",
+        "INSERT INTO media_items_new SELECT * FROM media_items",
+        "DROP TABLE media_items",
+        "ALTER TABLE media_items_new RENAME TO media_items",
+        "CREATE INDEX idx_media_date ON media_items(date DESC)",
+        "CREATE INDEX idx_media_chat ON media_items(chat_id)",
+        "CREATE INDEX idx_media_type ON media_items(media_type)",
+        "CREATE INDEX idx_media_hidden ON media_items(hidden_at)",
+        "CREATE INDEX idx_media_favorited ON media_items(favorited_at)",
+        "CREATE INDEX idx_media_chat_date ON media_items(chat_id, date DESC)",
+        "CREATE INDEX idx_media_face_count ON media_items(face_count)",
+        # -- faces --
+        """CREATE TABLE faces_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            media_id INTEGER NOT NULL, person_id INTEGER,
+            embedding BLOB NOT NULL,
+            bbox_x REAL NOT NULL, bbox_y REAL NOT NULL,
+            bbox_w REAL NOT NULL, bbox_h REAL NOT NULL,
+            confidence REAL NOT NULL, crop_path TEXT,
+            created_at DATETIME NOT NULL
+        )""",
+        "INSERT INTO faces_new SELECT * FROM faces",
+        "DROP TABLE faces",
+        "ALTER TABLE faces_new RENAME TO faces",
+        "CREATE INDEX idx_faces_media ON faces(media_id)",
+        "CREATE INDEX idx_faces_person ON faces(person_id)",
+    ]
+    for stmt in stmts:
+        await db.execute(stmt)
+
+
 async def init_db(db: aiosqlite.Connection) -> None:
     await db.executescript(SCHEMA)
     db.row_factory = aiosqlite.Row
@@ -104,11 +175,26 @@ async def init_db(db: aiosqlite.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_media_favorited ON media_items(favorited_at)",
         "CREATE INDEX IF NOT EXISTS idx_media_chat_date ON media_items(chat_id, date DESC)",
         "ALTER TABLE media_items ADD COLUMN faces_scanned INTEGER DEFAULT 0",
+        "ALTER TABLE media_items ADD COLUMN face_count INTEGER DEFAULT NULL",
+        "CREATE INDEX IF NOT EXISTS idx_media_face_count ON media_items(face_count)",
+        "CREATE INDEX IF NOT EXISTS idx_media_unscanned ON media_items(media_type, faces_scanned)",
     ]:
         try:
             await db.execute(migration)
         except sqlite3.OperationalError:
             pass  # Column already exists
+
+    # Backfill face_count for already-scanned photos that have NULL face_count
+    await db.execute(
+        """UPDATE media_items SET face_count = (
+            SELECT COUNT(*) FROM faces WHERE faces.media_id = media_items.id
+        ) WHERE faces_scanned = 1 AND face_count IS NULL"""
+    )
+
+    # Migrate media_items and faces to AUTOINCREMENT to prevent ID reuse
+    # after clear+resync (which caused stale browser cache hits).
+    await _migrate_to_autoincrement(db)
+
     await db.commit()
 
 
@@ -159,7 +245,7 @@ async def update_sync_progress(
         {
             "chat_id": chat_id,
             "last_msg_id": last_msg_id,
-            "now": datetime.now(timezone.utc).isoformat(),
+            "now": utc_now_iso(),
         },
     )
     await db.commit()
@@ -211,6 +297,7 @@ async def get_media_page(
     media_type: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    faces: str | None = None,
 ) -> list[dict]:
     conditions = [
         "hidden_at IS NULL",
@@ -238,6 +325,13 @@ async def get_media_page(
         ).strftime("%Y-%m-%d")
         conditions.append("date < :date_to_exclusive")
         params["date_to_exclusive"] = date_to_exclusive
+
+    if faces == "none":
+        conditions.append("face_count = 0")
+    elif faces == "solo":
+        conditions.append("face_count = 1")
+    elif faces == "group":
+        conditions.append("face_count >= 2")
 
     return await _paginate_media(
         db,
@@ -275,7 +369,7 @@ async def upsert_sync_state(
             "chat_name": chat_name,
             "active": int(active),
             "last_msg_id": last_msg_id,
-            "now": datetime.now(timezone.utc).isoformat(),
+            "now": utc_now_iso(),
         },
     )
     await db.commit()
@@ -291,6 +385,14 @@ async def get_all_sync_states(db: aiosqlite.Connection) -> list[dict]:
     cursor = await db.execute("SELECT * FROM sync_state ORDER BY chat_name")
     rows = await cursor.fetchall()
     return [dict(row) for row in rows]
+
+
+async def deactivate_sync_state(db: aiosqlite.Connection, chat_id: int) -> None:
+    """Set active=0 for a chat's sync state without touching last_synced."""
+    await db.execute(
+        "UPDATE sync_state SET active = 0 WHERE chat_id = ?", (chat_id,)
+    )
+    await db.commit()
 
 
 async def update_file_ref(
@@ -353,7 +455,7 @@ async def clear_chat_media(db: aiosqlite.Connection, chat_id: int) -> list[str]:
         "UPDATE persons SET face_count = ("
         "  SELECT COUNT(*) FROM faces WHERE person_id = persons.id"
         "), updated_at = ?",
-        (datetime.now(tz=timezone.utc).isoformat(),),
+        (utc_now_iso(),),
     )
     await db.commit()
     return paths
@@ -371,9 +473,7 @@ async def clear_all_media(db: aiosqlite.Connection) -> list[str]:
     rows = await cursor.fetchall()
     paths = [p for row in rows for p in (row[0], row[1]) if p]
 
-    cursor = await db.execute(
-        "SELECT crop_path FROM faces WHERE crop_path IS NOT NULL"
-    )
+    cursor = await db.execute("SELECT crop_path FROM faces WHERE crop_path IS NOT NULL")
     paths += [row[0] for row in await cursor.fetchall()]
 
     await db.execute("DELETE FROM faces")
@@ -383,7 +483,7 @@ async def clear_all_media(db: aiosqlite.Connection) -> list[str]:
     await db.execute(
         "UPDATE face_scan_state SET status = 'idle', scanned_count = 0, "
         "total_count = 0, updated_at = ? WHERE id = 1",
-        (datetime.now(tz=timezone.utc).isoformat(),),
+        (utc_now_iso(),),
     )
     await db.commit()
     return paths
@@ -419,7 +519,7 @@ async def get_media_by_id(db: aiosqlite.Connection, media_id: int) -> dict | Non
 async def hide_media_item(db: aiosqlite.Connection, media_id: int) -> None:
     await db.execute(
         "UPDATE media_items SET hidden_at = ? WHERE id = ?",
-        (datetime.now(timezone.utc).isoformat(), media_id),
+        (utc_now_iso(), media_id),
     )
     await db.commit()
 
@@ -428,7 +528,7 @@ async def hide_media_items(db: aiosqlite.Connection, media_ids: list[int]) -> No
     if not media_ids:
         return
     placeholders = ", ".join("?" for _ in media_ids)
-    now = datetime.now(timezone.utc).isoformat()
+    now = utc_now_iso()
     await db.execute(
         f"UPDATE media_items SET hidden_at = ? WHERE id IN ({placeholders})",
         [now, *media_ids],
@@ -440,10 +540,21 @@ async def favorite_media_items(db: aiosqlite.Connection, media_ids: list[int]) -
     if not media_ids:
         return
     placeholders = ", ".join("?" for _ in media_ids)
-    now = datetime.now(timezone.utc).isoformat()
+    now = utc_now_iso()
     await db.execute(
         f"UPDATE media_items SET favorited_at = ? WHERE id IN ({placeholders})",
         [now, *media_ids],
+    )
+    await db.commit()
+
+
+async def unfavorite_media_items(db: aiosqlite.Connection, media_ids: list[int]) -> None:
+    if not media_ids:
+        return
+    placeholders = ", ".join("?" for _ in media_ids)
+    await db.execute(
+        f"UPDATE media_items SET favorited_at = NULL WHERE id IN ({placeholders})",
+        media_ids,
     )
     await db.commit()
 
@@ -492,7 +603,7 @@ async def get_hidden_count(db: aiosqlite.Connection) -> int:
 async def hide_dialog(db: aiosqlite.Connection, dialog_id: int) -> None:
     await db.execute(
         "UPDATE dialogs SET hidden_at = ? WHERE id = ?",
-        (datetime.now(timezone.utc).isoformat(), dialog_id),
+        (utc_now_iso(), dialog_id),
     )
     await db.commit()
 
@@ -531,7 +642,7 @@ async def get_hidden_dialog_count(db: aiosqlite.Connection) -> int:
 async def favorite_media_item(db: aiosqlite.Connection, media_id: int) -> None:
     await db.execute(
         "UPDATE media_items SET favorited_at = ? WHERE id = ?",
-        (datetime.now(timezone.utc).isoformat(), media_id),
+        (utc_now_iso(), media_id),
     )
     await db.commit()
 
@@ -570,6 +681,16 @@ async def get_favorites_count(db: aiosqlite.Connection) -> int:
     return row[0] if row else 0
 
 
+async def get_media_count(db: aiosqlite.Connection) -> int:
+    cursor = await db.execute(
+        "SELECT COUNT(*) FROM media_items"
+        " WHERE hidden_at IS NULL"
+        " AND chat_id NOT IN (SELECT id FROM dialogs WHERE hidden_at IS NOT NULL)"
+    )
+    row = await cursor.fetchone()
+    return row[0] if row else 0
+
+
 # endregion
 
 
@@ -578,7 +699,7 @@ async def upsert_dialogs_batch(db: aiosqlite.Connection, dialogs: list[dict]) ->
     """Bulk upsert dialog metadata into the dialogs table."""
     if not dialogs:
         return
-    now = datetime.now(timezone.utc).isoformat()
+    now = utc_now_iso()
     rows = [
         {
             "id": d["id"],
@@ -620,6 +741,7 @@ async def get_all_dialogs(db: aiosqlite.Connection) -> list[dict]:
 
 # region Faces
 
+
 async def get_unscanned_photos(db: aiosqlite.Connection, limit: int = 50) -> list[dict]:
     """Photos not yet scanned for faces, prioritizing those with cached thumbnails."""
     cursor = await db.execute(
@@ -651,31 +773,50 @@ async def get_total_photo_count(db: aiosqlite.Connection) -> int:
 
 async def insert_faces_batch(db: aiosqlite.Connection, faces: list[dict]) -> list[int]:
     """Insert face rows, return their IDs."""
-    ids = []
-    for face in faces:
-        cursor = await db.execute(
-            """INSERT INTO faces (media_id, embedding, bbox_x, bbox_y, bbox_w, bbox_h,
-               confidence, crop_path, created_at)
-               VALUES (:media_id, :embedding, :bbox_x, :bbox_y, :bbox_w, :bbox_h,
-               :confidence, :crop_path, :created_at)""",
-            face,
-        )
-        ids.append(cursor.lastrowid)
-    return ids
+    if not faces:
+        return []
+    cols = "media_id, embedding, bbox_x, bbox_y, bbox_w, bbox_h, confidence, crop_path, created_at"
+    keys = ["media_id", "embedding", "bbox_x", "bbox_y", "bbox_w", "bbox_h",
+            "confidence", "crop_path", "created_at"]
+    single = f"({', '.join('?' for _ in keys)})"
+    chunk_size = 100  # 100 * 9 cols = 900 params, under SQLite's 999 limit
+    all_ids: list[int] = []
+    for i in range(0, len(faces), chunk_size):
+        chunk = faces[i:i + chunk_size]
+        params: list = []
+        for face in chunk:
+            params.extend(face[k] for k in keys)
+        sql = f"INSERT INTO faces ({cols}) VALUES {', '.join(single for _ in chunk)} RETURNING id"
+        cursor = await db.execute(sql, params)
+        rows = await cursor.fetchall()
+        all_ids.extend(row[0] for row in rows)
+    return all_ids
 
 
-async def mark_media_scanned(db: aiosqlite.Connection, media_ids: list[int]) -> None:
+async def mark_media_scanned(
+    db: aiosqlite.Connection,
+    media_ids: list[int],
+    face_counts: dict[int, int] | None = None,
+) -> None:
     if not media_ids:
         return
-    placeholders = ", ".join("?" for _ in media_ids)
-    await db.execute(
-        f"UPDATE media_items SET faces_scanned = 1 WHERE id IN ({placeholders})",
-        media_ids,
-    )
+    if face_counts:
+        await db.executemany(
+            "UPDATE media_items SET faces_scanned = 1, face_count = ? WHERE id = ?",
+            [(face_counts.get(mid, 0), mid) for mid in media_ids],
+        )
+    else:
+        placeholders = ", ".join("?" for _ in media_ids)
+        await db.execute(
+            f"UPDATE media_items SET faces_scanned = 1, face_count = 0 WHERE id IN ({placeholders})",
+            media_ids,
+        )
+    await db.commit()
 
 
 async def get_all_face_embeddings(db: aiosqlite.Connection) -> list[dict]:
-    cursor = await db.execute("SELECT id, embedding FROM faces")
+    # Threshold must match MIN_CONFIDENCE in face_scanner.py
+    cursor = await db.execute("SELECT id, embedding FROM faces WHERE confidence >= 0.5")
     rows = await cursor.fetchall()
     return [dict(r) for r in rows]
 
@@ -690,7 +831,7 @@ async def bulk_assign_persons(db: aiosqlite.Connection, clusters: list[dict]) ->
 
     Each cluster dict: {face_ids: list[int], representative_face_id: int}
     """
-    now = datetime.now(tz=timezone.utc).isoformat()
+    now = utc_now_iso()
     for cluster in clusters:
         cursor = await db.execute(
             """INSERT INTO persons (representative_face_id, face_count, created_at, updated_at)
@@ -738,7 +879,7 @@ async def get_person(db: aiosqlite.Connection, person_id: int) -> dict | None:
 
 
 async def rename_person(db: aiosqlite.Connection, person_id: int, name: str) -> None:
-    now = datetime.now(tz=timezone.utc).isoformat()
+    now = utc_now_iso()
     await db.execute(
         "UPDATE persons SET name = ?, updated_at = ? WHERE id = ?",
         (name, now, person_id),
@@ -756,7 +897,7 @@ async def merge_persons(db: aiosqlite.Connection, keep_id: int, merge_id: int) -
         "SELECT COUNT(*) FROM faces WHERE person_id = ?", (keep_id,)
     )
     row = await cursor.fetchone()
-    now = datetime.now(tz=timezone.utc).isoformat()
+    now = utc_now_iso()
     await db.execute(
         "UPDATE persons SET face_count = ?, updated_at = ? WHERE id = ?",
         (row[0], now, keep_id),
@@ -765,17 +906,43 @@ async def merge_persons(db: aiosqlite.Connection, keep_id: int, merge_id: int) -
     await db.commit()
 
 
+async def merge_persons_batch(
+    db: aiosqlite.Connection, keep_id: int, merge_ids: list[int]
+) -> None:
+    """Merge multiple persons into one. Atomic transaction."""
+    # Guard against self-merge
+    merge_ids = [mid for mid in merge_ids if mid != keep_id]
+    if not merge_ids:
+        return
+    placeholders = ", ".join("?" for _ in merge_ids)
+    await db.execute(
+        f"UPDATE faces SET person_id = ? WHERE person_id IN ({placeholders})",
+        [keep_id, *merge_ids],
+    )
+    cursor = await db.execute(
+        "SELECT COUNT(*) FROM faces WHERE person_id = ?", (keep_id,)
+    )
+    row = await cursor.fetchone()
+    now = utc_now_iso()
+    await db.execute(
+        "UPDATE persons SET face_count = ?, updated_at = ? WHERE id = ?",
+        (row[0], now, keep_id),
+    )
+    await db.execute(
+        f"DELETE FROM persons WHERE id IN ({placeholders})", merge_ids
+    )
+    await db.commit()
+
+
 async def remove_face_from_person(db: aiosqlite.Connection, face_id: int) -> None:
     """Unassign a face from its person, update counts."""
-    cursor = await db.execute(
-        "SELECT person_id FROM faces WHERE id = ?", (face_id,)
-    )
+    cursor = await db.execute("SELECT person_id FROM faces WHERE id = ?", (face_id,))
     row = await cursor.fetchone()
     if not row or not row[0]:
         return
     person_id = row[0]
     await db.execute("UPDATE faces SET person_id = NULL WHERE id = ?", (face_id,))
-    now = datetime.now(tz=timezone.utc).isoformat()
+    now = utc_now_iso()
     await db.execute(
         "UPDATE persons SET face_count = face_count - 1, updated_at = ? WHERE id = ?",
         (now, person_id),
@@ -819,9 +986,15 @@ async def get_face_scan_state(db: aiosqlite.Connection) -> dict:
     return dict(row)
 
 
-_SCAN_STATE_FIELDS = frozenset({
-    "status", "scanned_count", "total_count", "last_scanned_media_id", "last_error",
-})
+_SCAN_STATE_FIELDS = frozenset(
+    {
+        "status",
+        "scanned_count",
+        "total_count",
+        "last_scanned_media_id",
+        "last_error",
+    }
+)
 
 
 async def update_face_scan_state(db: aiosqlite.Connection, **kwargs) -> None:
@@ -830,7 +1003,7 @@ async def update_face_scan_state(db: aiosqlite.Connection, **kwargs) -> None:
         raise ValueError(f"Invalid face_scan_state fields: {invalid}")
     cursor = await db.execute("SELECT id FROM face_scan_state WHERE id = 1")
     row = await cursor.fetchone()
-    now = datetime.now(tz=timezone.utc).isoformat()
+    now = utc_now_iso()
     if not row:
         await db.execute(
             """INSERT INTO face_scan_state (id, status, scanned_count, total_count, updated_at)
@@ -844,6 +1017,18 @@ async def update_face_scan_state(db: aiosqlite.Connection, **kwargs) -> None:
         kwargs,
     )
     await db.commit()
+
+
+async def get_person_embeddings(db: aiosqlite.Connection) -> list[dict]:
+    """Fetch representative face embedding for each person."""
+    cursor = await db.execute(
+        """SELECT p.id as person_id, f.embedding
+           FROM persons p
+           JOIN faces f ON f.id = p.representative_face_id
+           WHERE p.representative_face_id IS NOT NULL"""
+    )
+    rows = await cursor.fetchall()
+    return [dict(r) for r in rows]
 
 
 async def get_person_count(db: aiosqlite.Connection) -> int:

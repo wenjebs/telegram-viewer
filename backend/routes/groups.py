@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from cachetools import TTLCache
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -20,9 +21,11 @@ from database import (
     unhide_dialogs,
     get_hidden_dialogs,
     get_hidden_dialog_count,
+    deactivate_sync_state,
 )
 from deps import get_db, get_tg, get_sync_status, get_background_tasks
-from indexer import index_chat
+from indexer import index_chat, get_new_media_counts
+from routes.faces import maybe_start_face_scan
 from utils import fire_and_forget
 
 if TYPE_CHECKING:
@@ -120,6 +123,49 @@ async def unhide_groups_batch(
     return {"success": True}
 
 
+# In-memory cache for preview counts.
+# Note: per-process cache — each worker gets its own copy.
+_preview_cache: TTLCache[int, tuple[int, dict] | None] = TTLCache(maxsize=1000, ttl=300)
+
+
+@router.get("/preview-counts")
+async def preview_counts(
+    tg: TelegramClientWrapper = Depends(get_tg),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get estimated new media counts for all active groups since their last sync."""
+    states = await get_all_sync_states(db)
+    active_states = [s for s in states if s["active"]]
+
+    result: dict[str, dict | None] = {}
+    to_fetch: list[dict] = []
+
+    for state in active_states:
+        cid = state["chat_id"]
+        cached = _preview_cache.get(cid)
+        if cached is not None:
+            cached_min_id, counts = cached
+            if cached_min_id == state["last_msg_id"]:
+                result[str(cid)] = counts
+                continue
+        to_fetch.append(state)
+
+    # Fetch uncached groups with concurrency limit
+    sem = asyncio.Semaphore(3)
+
+    async def _count(state: dict) -> None:
+        async with sem:
+            cid = state["chat_id"]
+            min_id = state["last_msg_id"]
+            counts = await get_new_media_counts(tg, cid, min_id=min_id)
+            if counts is not None:
+                _preview_cache[cid] = (min_id, counts)
+            result[str(cid)] = counts
+
+    await asyncio.gather(*[_count(s) for s in to_fetch])
+    return result
+
+
 @router.post("/{chat_id}/hide")
 async def hide_group(
     chat_id: int,
@@ -135,6 +181,29 @@ async def unhide_group(
     db: aiosqlite.Connection = Depends(get_db),
 ):
     await unhide_dialogs(db, [chat_id])
+    return {"success": True}
+
+
+@router.post("/{chat_id}/unsync")
+async def unsync_group(
+    chat_id: int,
+    db: aiosqlite.Connection = Depends(get_db),
+    sync_status: dict[int, dict] = Depends(get_sync_status),
+):
+    """Unsync a group: delete all media, reset sync state, deactivate."""
+    current = sync_status.get(chat_id, {})
+    if current.get("status") == "syncing":
+        return JSONResponse(
+            status_code=409,
+            content={"detail": "Cannot unsync while sync is in progress"},
+        )
+
+    paths = await clear_chat_media(db, chat_id)
+    await deactivate_sync_state(db, chat_id)
+    for p in paths:
+        await asyncio.to_thread(Path(p).unlink, missing_ok=True)
+    _preview_cache.pop(chat_id, None)
+    sync_status.pop(chat_id, None)
     return {"success": True}
 
 
@@ -155,13 +224,23 @@ async def _run_sync(
     db: aiosqlite.Connection,
     sync_status: dict[int, dict],
     chat_id: int,
+    bg_tasks: set[asyncio.Task],
 ) -> None:
     """Background coroutine that drives sync and updates in-memory status."""
     state = await get_sync_state(db, chat_id)
     chat_name = state["chat_name"] if state else str(chat_id)
+    min_id = state["last_msg_id"] if state else 0
+
+    # Reuse cached preview counts if they match the current min_id
+    precomputed_counts = None
+    cached = _preview_cache.get(chat_id)
+    if cached is not None:
+        cached_min_id, counts = cached
+        if cached_min_id == min_id:
+            precomputed_counts = counts
 
     try:
-        async for event in index_chat(tg, db, chat_id, chat_name):
+        async for event in index_chat(tg, db, chat_id, chat_name, precomputed_counts):
             sync_status[chat_id] = {
                 "status": "done" if event.type == "done" else "syncing",
                 "progress": event.progress,
@@ -172,6 +251,13 @@ async def _run_sync(
             "progress": sync_status[chat_id].get("progress", 0),
             "total": sync_status[chat_id].get("total", 0),
         }
+        _preview_cache.pop(chat_id, None)
+        try:
+            await maybe_start_face_scan(db, tg, bg_tasks)
+        except Exception:
+            logger.exception(
+                "Auto face scan trigger failed after sync chat_id=%s", chat_id
+            )
     except Exception:
         logger.exception("Sync failed for chat_id=%s", chat_id)
         sync_status[chat_id] = {"status": "error", "progress": 0, "total": 0}
@@ -193,7 +279,7 @@ async def sync_group(
         )
 
     sync_status[chat_id] = {"status": "syncing", "progress": 0, "total": 0}
-    fire_and_forget(_run_sync(tg, db, sync_status, chat_id), bg_tasks)
+    fire_and_forget(_run_sync(tg, db, sync_status, chat_id, bg_tasks), bg_tasks)
     return JSONResponse(status_code=202, content={"started": chat_id})
 
 
@@ -211,7 +297,7 @@ async def sync_all(
         if current.get("status") == "syncing":
             continue
         sync_status[chat_id] = {"status": "syncing", "progress": 0, "total": 0}
-        fire_and_forget(_run_sync(tg, db, sync_status, chat_id), bg_tasks)
+        fire_and_forget(_run_sync(tg, db, sync_status, chat_id, bg_tasks), bg_tasks)
         started.append(chat_id)
     return JSONResponse(status_code=202, content={"started": started})
 
