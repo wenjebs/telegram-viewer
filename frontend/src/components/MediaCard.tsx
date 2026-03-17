@@ -1,4 +1,5 @@
 import { useRef, useCallback } from 'react'
+import { useLongPress } from 'use-long-press'
 import type { MediaItem } from '#/api/schemas'
 import { getThumbnailUrl } from '#/api/client'
 import { formatDuration } from '#/utils/format'
@@ -20,46 +21,20 @@ export default function MediaCard({
 }: Props) {
   const isVideo = item.media_type === 'video'
 
-  // #region Long-press detection
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const startPos = useRef<{ x: number; y: number } | null>(null)
   const longPressTriggered = useRef(false)
 
-  const clearTimer = useCallback(() => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current)
-      timerRef.current = null
-    }
-  }, [])
-
-  const handlePointerDown = useCallback(
-    (e: React.PointerEvent) => {
-      if (!onLongPress) return
-      longPressTriggered.current = false
-      startPos.current = { x: e.clientX, y: e.clientY }
-      timerRef.current = setTimeout(() => {
-        longPressTriggered.current = true
-        onLongPress()
-      }, 300)
+  const longPressHandlers = useLongPress(
+    onLongPress
+      ? () => {
+          longPressTriggered.current = true
+          onLongPress()
+        }
+      : null,
+    {
+      threshold: 300,
+      cancelOnMovement: 10,
     },
-    [onLongPress],
-  )
-
-  const handlePointerMove = useCallback(
-    (e: React.PointerEvent) => {
-      if (!startPos.current) return
-      const dx = e.clientX - startPos.current.x
-      const dy = e.clientY - startPos.current.y
-      if (dx * dx + dy * dy > 100) {
-        clearTimer()
-      }
-    },
-    [clearTimer],
-  )
-
-  const handlePointerUp = useCallback(() => {
-    clearTimer()
-  }, [clearTimer])
+  )()
 
   const handleClick = useCallback(
     (e: React.MouseEvent) => {
@@ -83,26 +58,21 @@ export default function MediaCard({
     },
     [onLongPress, selectMode],
   )
-  // #endregion
 
-  // #region Render
   return (
     <div
       data-item-id={item.id}
-      className={`relative aspect-square cursor-pointer overflow-hidden rounded bg-neutral-800 transition-all${
+      className={`relative aspect-square cursor-pointer overflow-hidden rounded bg-surface-alt transition-all${
         selectMode && selected
-          ? ' ring-2 ring-blue-500 ring-offset-1 ring-offset-neutral-900'
+          ? ' ring-2 ring-blue-500 ring-offset-1 ring-offset-base'
           : ''
       }${selectMode && !selected ? ' opacity-60' : ''}`}
       onClick={handleClick}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-      onPointerCancel={handlePointerUp}
+      {...longPressHandlers}
       onContextMenu={handleContextMenu}
     >
       <img
-        src={getThumbnailUrl(item.id)}
+        src={getThumbnailUrl(item.id, item.date)}
         alt={item.caption || ''}
         loading="lazy"
         draggable={false}
@@ -118,6 +88,9 @@ export default function MediaCard({
           {formatDuration(item.duration)}
         </div>
       )}
+      <div className="absolute bottom-1 left-1 max-w-[calc(100%-3rem)] truncate rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white/80">
+        {item.chat_name}
+      </div>
       {/* Select mode checkbox */}
       {selectMode && (
         <div

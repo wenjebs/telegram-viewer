@@ -1,4 +1,4 @@
-import { useMemo, useRef, useEffect } from 'react'
+import { useMemo, useRef, useEffect, useState, useCallback } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import type { MediaItem, SyncStatus } from '#/api/schemas'
 import { extractDateKey } from '#/utils/format'
@@ -55,20 +55,79 @@ export default function MediaGrid({
   const grouped = useMemo(() => groupByDate(items), [items])
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  // Expose the scroll container via both refs
-  const setScrollRef = (el: HTMLDivElement | null) => {
-    scrollRef.current = el
-    if (containerRef) {
-      containerRef.current = el
-    }
-  }
+  // 1. Track container width via ResizeObserver
+  const [containerWidth, setContainerWidth] = useState(0)
+  const roRef = useRef<ResizeObserver | null>(null)
+
+  // Expose the scroll container via both refs + attach ResizeObserver
+  const setScrollRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      // Detach previous observer
+      if (roRef.current) {
+        roRef.current.disconnect()
+        roRef.current = null
+      }
+      scrollRef.current = el
+      if (containerRef) {
+        containerRef.current = el
+      }
+      // Attach observer to new element
+      if (el) {
+        const ro = new ResizeObserver((entries) => {
+          for (const entry of entries) {
+            setContainerWidth(entry.contentRect.width)
+          }
+        })
+        ro.observe(el)
+        roRef.current = ro
+      }
+    },
+    [containerRef],
+  )
+
+  // 2. Dynamic estimateSize based on item count and column count
+  const GAP = 12 // gap-3
+  const ROW_PADDING = 12 // p-3
+  const SCROLL_PADDING = 16 // p-4
+  const MIN_COL = 160
 
   const virtualizer = useVirtualizer({
     count: grouped.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => 300,
+    estimateSize: (index) => {
+      if (containerWidth === 0) return 300
+      const [, dateItems] = grouped[index]
+      const gridWidth = containerWidth - SCROLL_PADDING * 2 - ROW_PADDING * 2
+      const cols = Math.max(1, Math.floor((gridWidth + GAP) / (MIN_COL + GAP)))
+      const cellWidth = (gridWidth - (cols - 1) * GAP) / cols
+      const rows = Math.ceil(dateItems.length / cols)
+      const gridHeight = rows * cellWidth + (rows - 1) * GAP
+      // header (~28px) + mt-2 (8px) + gridHeight + p-3 top+bottom (24px)
+      return 28 + 8 + gridHeight + ROW_PADDING * 2
+    },
     overscan: 3,
+    // 3. Use gap instead of mb-4 margin (margin not in border-box measurements)
+    gap: 16,
+    // 4. Stable measurement cache key per date group
+    getItemKey: (index) => grouped[index][0],
   })
+
+  // 5. Invalidate measurements on group composition change
+  const groupFingerprint = useMemo(
+    () => grouped.map(([date, grp]) => `${date}:${grp.length}`).join(','),
+    [grouped],
+  )
+
+  useEffect(() => {
+    virtualizer.measure()
+  }, [groupFingerprint, virtualizer])
+
+  // 6. Invalidate measurements on container width change
+  useEffect(() => {
+    if (containerWidth > 0) {
+      virtualizer.measure()
+    }
+  }, [containerWidth, virtualizer])
 
   // Auto-load more when scrolled near the end
   const virtualItems = virtualizer.getVirtualItems()
@@ -97,13 +156,13 @@ export default function MediaGrid({
           : 0
 
       return (
-        <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8 text-neutral-400">
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8 text-text-soft">
           <span className="text-sm">
             {totals.total > 0
               ? `Syncing... ${totals.progress.toLocaleString()} / ${totals.total.toLocaleString()} items`
               : 'Syncing...'}
           </span>
-          <div className="h-2 w-64 overflow-hidden rounded-full bg-neutral-700">
+          <div className="h-2 w-64 overflow-hidden rounded-full bg-surface-strong">
             <div
               className={`h-full rounded-full bg-sky-600 transition-all duration-300${totals.total === 0 ? ' animate-pulse' : ''}`}
               style={{
@@ -116,7 +175,7 @@ export default function MediaGrid({
     }
 
     return (
-      <div className="flex flex-1 items-center justify-center p-8 text-neutral-500">
+      <div className="flex flex-1 items-center justify-center p-8 text-text-soft">
         No media found. Select some groups and sync to get started.
       </div>
     )
@@ -127,7 +186,7 @@ export default function MediaGrid({
   return (
     <div
       ref={setScrollRef}
-      className="flex-1 overflow-y-auto p-4"
+      className="flex-1 overflow-y-auto p-4 select-none"
       {...dragHandlers}
     >
       <div
@@ -156,7 +215,7 @@ export default function MediaGrid({
                 width: '100%',
                 transform: `translateY(${virtualRow.start}px)`,
               }}
-              className="mb-4 rounded-lg border border-neutral-800 bg-neutral-900/60 p-3"
+              className="rounded-lg border border-border bg-surface/60 p-3"
             >
               <div
                 className={`flex items-center gap-2${selectMode ? ' cursor-pointer' : ''}`}
@@ -171,7 +230,7 @@ export default function MediaGrid({
                     className={`flex h-4 w-4 items-center justify-center rounded border transition-colors${
                       allSelected
                         ? ' border-blue-500 bg-blue-500 text-white'
-                        : ' border-neutral-500 bg-transparent'
+                        : ' border-text-soft bg-transparent'
                     }`}
                   >
                     {allSelected && (
@@ -217,7 +276,7 @@ export default function MediaGrid({
       </div>
       {hasMore && (
         <button
-          className="mx-auto mt-6 block rounded-md border border-neutral-700 px-6 py-2 text-sm text-neutral-300 hover:bg-neutral-800 disabled:opacity-50"
+          className="mx-auto mt-6 block rounded-md border border-border px-6 py-2 text-sm text-text hover:bg-hover disabled:opacity-50"
           onClick={onLoadMore}
           disabled={loading}
         >
