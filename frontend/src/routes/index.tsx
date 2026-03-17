@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useHotkeys } from 'react-hotkeys-hook'
 import { createFileRoute } from '@tanstack/react-router'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { z } from 'zod'
 import { toast } from 'sonner'
 import {
   getAuthStatus,
@@ -11,6 +13,7 @@ import {
   unhideDialog,
   getHiddenDialogs,
   getHiddenDialogCount,
+  getMediaCount,
 } from '#/api/client'
 import type { DateRange } from 'react-day-picker'
 import type { Group, MediaItem, Person } from '#/api/schemas'
@@ -36,39 +39,173 @@ import { renamePerson, mergePersons } from '#/api/client'
 import PeopleGrid from '#/components/PeopleGrid'
 import PersonDetail from '#/components/PersonDetail'
 import PersonMergeModal from '#/components/PersonMergeModal'
+import KeepPersonPicker from '#/components/KeepPersonPicker'
+import ShortcutsModal from '#/components/ShortcutsModal'
+import { usePersonMerge } from '#/hooks/usePersonMerge'
 import { formatDateParam } from '#/utils/format'
-
-export const Route = createFileRoute('/')({ component: Home })
+import { useSearchParams } from '#/hooks/useSearchParam'
 
 type ViewMode = 'normal' | 'hidden' | 'favorites' | 'people'
+
+const searchSchema = z.object({
+  mode: z
+    .enum(['normal', 'hidden', 'favorites', 'people'])
+    .optional()
+    .catch(undefined),
+  person: z.coerce.number().optional().catch(undefined),
+  item: z.coerce.number().optional().catch(undefined),
+  media: z.enum(['photo', 'video']).optional().catch(undefined),
+  chat: z.enum(['dm', 'group', 'channel']).optional().catch(undefined),
+  faces: z.enum(['none', 'solo', 'group']).optional().catch(undefined),
+  sync: z.enum(['synced', 'unsynced']).optional().catch(undefined),
+  from: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional()
+    .catch(undefined),
+  to: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional()
+    .catch(undefined),
+  groups: z.string().optional().catch(undefined),
+  q: z.string().optional().catch(undefined),
+  hiddenDialogs: z
+    .union([z.literal('1'), z.literal('true'), z.literal(true)])
+    .transform(() => true as const)
+    .optional()
+    .catch(undefined),
+})
+
+export const Route = createFileRoute('/')({
+  component: Home,
+  validateSearch: (raw) => searchSchema.parse(raw),
+})
 
 function Home() {
   const queryClient = useQueryClient()
 
-  // #region State
-  const [authenticated, setAuthenticated] = useState<boolean | null>(null)
-  const [mediaTypeFilter, setMediaTypeFilter] = useState<string | null>(null)
-  const [chatTypeFilter, setChatTypeFilter] = useState<string | null>(null)
-  const [dateRange, setDateRange] = useState<DateRange | undefined>()
-  const [sidebarWidth, setSidebarWidth] = useState(280)
-  const [viewMode, setViewMode] = useState<ViewMode>('normal')
-  const [hiddenCount, setHiddenCount] = useState(0)
-  const [favoritesCount, setFavoritesCount] = useState(0)
-  const [selectedPerson, setSelectedPerson] = useState<Person | null>(null)
-  const [showMergeModal, setShowMergeModal] = useState(false)
-  const [showHiddenDialogs, setShowHiddenDialogs] = useState(false)
-  const [hiddenDialogs, setHiddenDialogs] = useState<Group[]>([])
-  const [hiddenDialogCount, setHiddenDialogCount] = useState(0)
+  // #region URL state
+  const { search, setSearch } = useSearchParams()
+  const viewMode: ViewMode = search.mode ?? 'normal'
+  const mediaTypeFilter = search.media ?? null
+  const chatTypeFilter = search.chat ?? null
+  const syncFilter = search.sync ?? null
+  const dateFrom = search.from
+  const dateTo = search.to
+  const dateRange: DateRange | undefined = useMemo(
+    () =>
+      dateFrom || dateTo
+        ? {
+            from: dateFrom ? new Date(dateFrom) : undefined,
+            to: dateTo ? new Date(dateTo) : undefined,
+          }
+        : undefined,
+    [dateFrom, dateTo],
+  )
+  const showHiddenDialogs = search.hiddenDialogs ?? false
+  const displayGroupIds = useMemo(
+    () =>
+      new Set(
+        search.groups?.split(',').map(Number).filter(Number.isFinite) ?? [],
+      ),
+    [search.groups],
+  )
   // #endregion
 
-  // #region Date filters
-  const dateFrom = useMemo(
-    () => (dateRange?.from ? formatDateParam(dateRange.from) : undefined),
-    [dateRange?.from],
+  // #region Local state (not URL-worthy)
+  const [authenticated, setAuthenticated] = useState<boolean | null>(null)
+  const [sidebarWidth, setSidebarWidth] = useState(280)
+  const [showMergeModal, setShowMergeModal] = useState(false)
+  const [showShortcuts, setShowShortcuts] = useState(false)
+  const [hiddenDialogs, setHiddenDialogs] = useState<Group[]>([])
+  const { data: hiddenCount = 0 } = useQuery({
+    queryKey: ['counts', 'hidden'],
+    queryFn: () => getHiddenCount().then((r) => r.count),
+    enabled: authenticated === true,
+  })
+  const { data: favoritesCount = 0 } = useQuery({
+    queryKey: ['counts', 'favorites'],
+    queryFn: () => getFavoritesCount().then((r) => r.count),
+    enabled: authenticated === true,
+  })
+  const { data: totalCount = 0 } = useQuery({
+    queryKey: ['counts', 'total'],
+    queryFn: () => getMediaCount().then((r) => r.count),
+    enabled: authenticated === true,
+  })
+  const { data: hiddenDialogCount = 0 } = useQuery({
+    queryKey: ['counts', 'hiddenDialogs'],
+    queryFn: () => getHiddenDialogCount().then((r) => r.count),
+    enabled: authenticated === true,
+  })
+  const [similarityThreshold, setSimilarityThreshold] = useState(0.4)
+  // #endregion
+
+  // #region URL state helpers
+  const setMediaTypeFilter = useCallback(
+    (v: string | null) =>
+      setSearch(
+        { media: (v as 'photo' | 'video') ?? undefined },
+        { replace: true },
+      ),
+    [setSearch],
   )
-  const dateTo = useMemo(
-    () => (dateRange?.to ? formatDateParam(dateRange.to) : undefined),
-    [dateRange?.to],
+  const setChatTypeFilter = useCallback(
+    (v: string | null) =>
+      setSearch(
+        { chat: (v as 'dm' | 'group' | 'channel') ?? undefined },
+        { replace: true },
+      ),
+    [setSearch],
+  )
+  const setSyncFilter = useCallback(
+    (v: string | null) =>
+      setSearch(
+        { sync: (v as 'synced' | 'unsynced') ?? undefined },
+        { replace: true },
+      ),
+    [setSearch],
+  )
+  const setDateRange = useCallback(
+    (dr: DateRange | undefined) =>
+      setSearch(
+        {
+          from: dr?.from ? formatDateParam(dr.from) : undefined,
+          to: dr?.to ? formatDateParam(dr.to) : undefined,
+        },
+        { replace: true },
+      ),
+    [setSearch],
+  )
+  const setSelectedPersonId = useCallback(
+    (id: number | undefined) => setSearch({ person: id }),
+    [setSearch],
+  )
+  const toggleDisplayFilter = useCallback(
+    (groupId: number) => {
+      const next = new Set(displayGroupIds)
+      if (next.has(groupId)) {
+        next.delete(groupId)
+      } else {
+        next.add(groupId)
+      }
+      const ids = [...next]
+      setSearch(
+        { groups: ids.length ? ids.join(',') : undefined },
+        { replace: true },
+      )
+    },
+    [displayGroupIds, setSearch],
+  )
+  const clearDisplayFilter = useCallback(
+    () => setSearch({ groups: undefined }, { replace: true }),
+    [setSearch],
+  )
+  const setShowHiddenDialogs = useCallback(
+    (v: boolean) =>
+      setSearch({ hiddenDialogs: v ? true : undefined }, { replace: true }),
+    [setSearch],
   )
   // #endregion
 
@@ -76,22 +213,26 @@ function Home() {
   const {
     groups,
     toggleActive,
+    unsyncGroup,
     activeGroupIds,
-    displayGroupIds,
     displayFilteredGroupIds,
-    toggleDisplayFilter,
-    clearDisplayFilter,
     refetch: refetchGroups,
-  } = useGroups(authenticated === true)
+    previewCounts,
+  } = useGroups({
+    enabled: authenticated === true,
+    displayGroupIds,
+  })
 
+  const facesFilter = search.faces ?? null
   const mediaFilters: MediaFilters = useMemo(
     () => ({
       groups: displayFilteredGroupIds,
       type: mediaTypeFilter ?? undefined,
       dateFrom,
       dateTo,
+      faces: facesFilter ?? undefined,
     }),
-    [displayFilteredGroupIds, mediaTypeFilter, dateFrom, dateTo],
+    [displayFilteredGroupIds, mediaTypeFilter, dateFrom, dateTo, facesFilter],
   )
 
   const media = useMedia(mediaFilters, authenticated === true)
@@ -99,7 +240,18 @@ function Home() {
   const favorites = useFavoritesMedia(
     viewMode === 'favorites' && authenticated === true,
   )
-  const persons = usePersons(viewMode === 'people' && authenticated === true)
+  const persons = usePersons(
+    viewMode === 'people' && authenticated === true,
+    similarityThreshold,
+  )
+  const personMerge = usePersonMerge(() => persons.invalidate())
+  const selectedPerson = useMemo(
+    () =>
+      search.person
+        ? (persons.persons.find((p) => p.id === search.person) ?? null)
+        : null,
+    [search.person, persons.persons],
+  )
   const personMedia = usePersonMedia(
     selectedPerson?.id ?? null,
     viewMode === 'people' && selectedPerson != null && authenticated === true,
@@ -115,6 +267,14 @@ function Home() {
     enterSelectMode: selectMode.enterSelectMode,
     setSelection: selectMode.setSelection,
     selectedIds: selectMode.selectedIds,
+  })
+  const peopleContainerRef = useRef<HTMLDivElement>(null)
+  const peopleDragSelect = useDragSelect({
+    containerRef: peopleContainerRef,
+    selectMode: personMerge.selectMode.active,
+    enterSelectMode: personMerge.selectMode.enterSelectMode,
+    setSelection: personMerge.selectMode.setSelection,
+    selectedIds: personMerge.selectMode.selectedIds,
   })
   // #endregion
 
@@ -139,23 +299,26 @@ function Home() {
   usePrefetch(activeItems, authenticated === true)
 
   // #region Counts
-  const refreshCounts = useCallback(() => {
-    getHiddenCount()
-      .then((r) => setHiddenCount(r.count))
-      .catch(() => toast.error('Failed to fetch hidden count'))
-    getFavoritesCount()
-      .then((r) => setFavoritesCount(r.count))
-      .catch(() => toast.error('Failed to fetch favorites count'))
-    getHiddenDialogCount()
-      .then((r) => setHiddenDialogCount(r.count))
-      .catch(() => toast.error('Failed to fetch hidden dialog count'))
-  }, [])
+  const invalidateCounts = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: ['counts'] }),
+    [queryClient],
+  )
+  const invalidateActiveMedia = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['media'] })
+    if (selectedPerson) {
+      queryClient.invalidateQueries({
+        queryKey: ['faces', 'persons', selectedPerson.id, 'media'],
+      })
+    }
+  }, [queryClient, selectedPerson])
   // #endregion
 
   // #region Sync polling
   const onSyncComplete = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['media'] })
-  }, [queryClient])
+    queryClient.invalidateQueries({ queryKey: ['preview-counts'] })
+    invalidateCounts()
+  }, [queryClient, invalidateCounts])
 
   const { syncing, syncStatuses, handleSync } = useSyncStatus({
     onSyncComplete,
@@ -163,12 +326,34 @@ function Home() {
   // #endregion
 
   // #region Lightbox
+  const lightboxItem = useMemo(
+    () =>
+      search.item
+        ? (activeItems.find((i) => i.id === search.item) ?? null)
+        : null,
+    [search.item, activeItems],
+  )
+  const setLightboxItem = useCallback(
+    (item: MediaItem | null) => {
+      if (item) {
+        // Opening or navigating: use replace for prev/next
+        setSearch({ item: item.id }, { replace: !!search.item })
+      } else {
+        // Closing: use replace to avoid push loop
+        setSearch({ item: undefined }, { replace: true })
+      }
+    },
+    [setSearch, search.item],
+  )
   const lightbox = useLightbox({
     activeItems,
-    media,
+    selectedItem: lightboxItem,
+    setSelectedItem: setLightboxItem,
+    media: selectedPerson ? personMedia : media,
     hidden,
     selectMode,
-    refreshCounts,
+    refreshCounts: invalidateCounts,
+    invalidateMedia: invalidateActiveMedia,
     viewMode,
   })
   // #endregion
@@ -181,35 +366,84 @@ function Home() {
   }, [])
 
   useEffect(() => {
-    if (authenticated) refreshCounts()
-  }, [authenticated, refreshCounts])
+    if (authenticated) invalidateCounts()
+  }, [authenticated, invalidateCounts])
+
+  // Auto-set mode=people when person is in URL but mode isn't
+  useEffect(() => {
+    if (search.person && viewMode !== 'people') {
+      setSearch({ mode: 'people' }, { replace: true })
+    }
+  }, [search.person, viewMode, setSearch])
+
+  // Fetch hidden dialogs when URL says hiddenDialogs=1 on load
+  useEffect(() => {
+    if (showHiddenDialogs && hiddenDialogs.length === 0) {
+      getHiddenDialogs()
+        .then(setHiddenDialogs)
+        .catch(() => {
+          toast.error('Failed to load hidden dialogs')
+          setHiddenDialogs([])
+        })
+    }
+  }, [showHiddenDialogs]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Prune displayGroupIds when activeGroupIds changes
+  useEffect(() => {
+    if (displayGroupIds.size === 0) return
+    const activeSet = new Set(activeGroupIds)
+    const pruned = [...displayGroupIds].filter((id) => activeSet.has(id))
+    if (pruned.length < displayGroupIds.size) {
+      setSearch(
+        {
+          groups: pruned.length ? pruned.join(',') : undefined,
+        },
+        { replace: true },
+      )
+    }
+  }, [activeGroupIds]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Escape key
-  const selectModeRef = useRef(selectMode)
-  selectModeRef.current = selectMode
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
+  useHotkeys(
+    'escape',
+    () => {
       if (
-        e.key === 'Escape' &&
-        selectModeRef.current.active &&
+        personMerge.selectMode.active &&
         !lightbox.selectedItem &&
         !lightbox.justClosedLightboxRef.current
       ) {
-        selectModeRef.current.exitSelectMode()
+        personMerge.selectMode.exitSelectMode()
+        return
       }
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lightbox.selectedItem])
+      if (
+        selectMode.active &&
+        !lightbox.selectedItem &&
+        !lightbox.justClosedLightboxRef.current
+      ) {
+        selectMode.exitSelectMode()
+      }
+    },
+    [selectMode.active, personMerge.selectMode.active, lightbox.selectedItem],
+  )
+
+  useHotkeys('shift+slash', () => setShowShortcuts(true))
+
   // #endregion
 
   // #region Handlers
   const handleClear = async () => {
+    if (
+      !window.confirm(
+        'This will clear everything — faces, downloaded photos, and cache. This is a full reset. Continue?',
+      )
+    )
+      return
     try {
       await clearAllMedia()
       queryClient.invalidateQueries({ queryKey: ['media'] })
+      queryClient.invalidateQueries({ queryKey: ['faces'] })
+      invalidateCounts()
+      setSearch({ person: undefined, mode: undefined })
       toast.success('All media cleared')
     } catch {
       toast.error('Failed to clear media')
@@ -241,9 +475,12 @@ function Home() {
 
   const handleViewModeChange = (mode: ViewMode) => {
     selectMode.exitSelectMode()
+    personMerge.selectMode.exitSelectMode()
     lightbox.setSelectedItem(null)
-    setSelectedPerson(null)
-    setViewMode(mode)
+    setSearch({
+      mode: mode === 'normal' ? undefined : mode,
+      person: undefined,
+    })
   }
 
   const handleHideDialog = async (group: Group) => {
@@ -256,7 +493,7 @@ function Home() {
     toast.success(`${group.name} hidden`)
     refetchGroups()
     queryClient.invalidateQueries({ queryKey: ['media'] })
-    refreshCounts()
+    invalidateCounts()
   }
 
   const handleUnhideDialog = async (group: Group) => {
@@ -268,8 +505,27 @@ function Home() {
     }
     toast.success(`${group.name} unhidden`)
     setHiddenDialogs((prev) => prev.filter((g) => g.id !== group.id))
-    setHiddenDialogCount((prev) => Math.max(0, prev - 1))
     refetchGroups()
+    queryClient.invalidateQueries({ queryKey: ['media'] })
+    invalidateCounts()
+  }
+
+  const handleUnsyncGroup = async (group: Group) => {
+    try {
+      await unsyncGroup(group.id)
+    } catch {
+      toast.error('Failed to unsync group')
+      return
+    }
+    toast.success(`${group.name} unsynced`)
+    // Remove from display filter if present
+    if (displayGroupIds.has(group.id)) {
+      const remaining = [...displayGroupIds].filter((id) => id !== group.id)
+      setSearch(
+        { groups: remaining.length ? remaining.join(',') : undefined },
+        { replace: true },
+      )
+    }
   }
 
   const handleToggleHiddenDialogs = async () => {
@@ -286,6 +542,29 @@ function Home() {
     }
   }
   // #endregion
+
+  // Navigation shortcuts (only when lightbox is closed)
+  useHotkeys('p', () => !lightboxItem && handleViewModeChange('people'), [
+    lightboxItem,
+  ])
+  useHotkeys('m', () => !lightboxItem && handleViewModeChange('normal'), [
+    lightboxItem,
+  ])
+  useHotkeys('f', () => !lightboxItem && handleViewModeChange('favorites'), [
+    lightboxItem,
+  ])
+  useHotkeys(
+    'h',
+    () => {
+      if (lightboxItem || selectMode.active) return
+      handleViewModeChange(viewMode === 'hidden' ? 'normal' : 'hidden')
+    },
+    [lightboxItem, selectMode.active, viewMode],
+  )
+  useHotkeys('shift+h', () => !lightboxItem && handleToggleHiddenDialogs(), [
+    lightboxItem,
+    handleToggleHiddenDialogs,
+  ])
 
   // #region Render
   if (authenticated === null) return null
@@ -305,6 +584,15 @@ function Home() {
         onMediaTypeFilter={setMediaTypeFilter}
         chatTypeFilter={chatTypeFilter}
         onChatTypeFilter={setChatTypeFilter}
+        syncFilter={syncFilter}
+        onSyncFilter={setSyncFilter}
+        facesFilter={facesFilter}
+        onFacesFilter={(v) =>
+          setSearch(
+            { faces: (v as 'none' | 'solo' | 'group') ?? undefined },
+            { replace: true },
+          )
+        }
         dateRange={dateRange}
         onDateRangeChange={setDateRange}
         onSync={() => handleSync(activeGroupIds)}
@@ -322,69 +610,202 @@ function Home() {
         hiddenDialogs={hiddenDialogs}
         onHideDialog={handleHideDialog}
         onUnhideDialog={handleUnhideDialog}
+        onUnsyncGroup={handleUnsyncGroup}
         hiddenDialogCount={hiddenDialogCount}
         personCount={faceScan.status.person_count}
         faceScanning={faceScan.scanning}
         faceScanScanned={faceScan.status.scanned}
         faceScanTotal={faceScan.status.total}
         onStartFaceScan={() => faceScan.startScan(false)}
+        totalCount={totalCount}
+        previewCounts={previewCounts}
+        initialSearchQuery={search.q ?? ''}
+        onSearchQueryChange={(q) =>
+          setSearch({ q: q || undefined }, { replace: true })
+        }
       />
       <div className="relative flex flex-1 flex-col overflow-hidden">
+        {viewMode !== 'normal' && (
+          <div className="flex items-center gap-2 border-b border-neutral-800 bg-neutral-900 px-4 py-2">
+            {viewMode === 'hidden' && (
+              <svg
+                className="h-4 w-4 text-neutral-400"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+              >
+                <path d="M2 8s2.5-4 6-4 6 4 6 4-2.5 4-6 4-6-4-6-4z" />
+                <circle cx="8" cy="8" r="2" />
+                <line x1="2" y1="14" x2="14" y2="2" />
+              </svg>
+            )}
+            {viewMode === 'favorites' && (
+              <span className="text-sm text-neutral-400">♥</span>
+            )}
+            {viewMode === 'people' && !selectedPerson && (
+              <svg
+                className="h-4 w-4 text-neutral-400"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+              >
+                <circle cx="5.5" cy="5" r="2.5" />
+                <circle cx="10.5" cy="5" r="2.5" />
+                <path d="M1 14c0-2.2 1.8-4 4-4h.5M15 14c0-2.2-1.8-4-4-4h-.5" />
+              </svg>
+            )}
+            {viewMode === 'people' && selectedPerson && (
+              <svg
+                className="h-4 w-4 text-neutral-400"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+              >
+                <circle cx="8" cy="5" r="3" />
+                <path d="M2 15c0-3 2.7-5 6-5s6 2 6 5" />
+              </svg>
+            )}
+            <span className="flex-1 text-sm font-medium text-white">
+              {viewMode === 'hidden' && 'Hidden Media'}
+              {viewMode === 'favorites' && 'Favorites'}
+              {viewMode === 'people' && !selectedPerson && 'People'}
+              {viewMode === 'people' && selectedPerson && selectedPerson.name}
+            </span>
+            {viewMode === 'people' && !selectedPerson && (
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-neutral-500">Similarity</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={similarityThreshold}
+                  onChange={(e) => {
+                    const v = Number(e.target.value)
+                    if (v >= 0 && v <= 1) setSimilarityThreshold(v)
+                  }}
+                  className="w-14 rounded bg-neutral-800 px-1.5 py-0.5 text-xs text-neutral-300 outline-none focus:ring-1 focus:ring-sky-500"
+                />
+              </div>
+            )}
+            {viewMode === 'people' &&
+              !selectedPerson &&
+              !personMerge.selectMode.active && (
+                <button
+                  className="rounded px-2 py-1 text-xs text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
+                  onClick={() => personMerge.selectMode.enterSelectMode()}
+                >
+                  Select
+                </button>
+              )}
+            <button
+              className="rounded p-1 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300"
+              onClick={() => {
+                if (personMerge.selectMode.active) {
+                  personMerge.selectMode.exitSelectMode()
+                } else {
+                  setSearch({ mode: undefined, person: undefined })
+                }
+              }}
+              title={
+                personMerge.selectMode.active
+                  ? 'Exit select mode'
+                  : 'Back to gallery'
+              }
+            >
+              <svg
+                className="h-4 w-4"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path d="M4 4l8 8M12 4l-8 8" />
+              </svg>
+            </button>
+          </div>
+        )}
         {activeGroupIds.length > 0 && (
           <div className="flex items-center justify-center gap-2 border-b border-neutral-800 bg-neutral-900/80 px-4 py-2 backdrop-blur-sm">
             <span className="shrink-0 text-xs text-neutral-500">Syncing:</span>
             <div className="flex flex-wrap justify-center gap-1">
               {groups
                 .filter((g) => g.active)
-                .map((g) => (
-                  <button
-                    key={g.id}
-                    className="flex items-center gap-1 rounded-full bg-emerald-600/20 px-2 py-0.5 text-xs text-emerald-300 hover:bg-emerald-600/30"
-                    onClick={() => toggleActive(g)}
-                  >
-                    <span className="max-w-28 truncate">{g.name}</span>
-                    <span className="text-emerald-400/60 hover:text-emerald-300">
-                      ✕
-                    </span>
-                  </button>
-                ))}
+                .map((g) => {
+                  const filtered = displayGroupIds.has(g.id)
+                  return (
+                    <button
+                      key={g.id}
+                      className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${
+                        filtered
+                          ? 'bg-sky-600/20 text-sky-300 hover:bg-sky-600/30'
+                          : 'bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/30'
+                      }`}
+                      onClick={() => toggleDisplayFilter(g.id)}
+                      title="Filter gallery to this chat"
+                    >
+                      <span className="max-w-28 truncate">{g.name}</span>
+                      <span
+                        role="button"
+                        className={`${
+                          filtered
+                            ? 'text-sky-400/60 hover:text-sky-300'
+                            : 'text-emerald-400/60 hover:text-emerald-300'
+                        }`}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          toggleActive(g)
+                        }}
+                        title="Stop syncing"
+                      >
+                        ✕
+                      </span>
+                    </button>
+                  )
+                })}
             </div>
-          </div>
-        )}
-        {displayGroupIds.size > 0 && (
-          <div className="flex items-center justify-center gap-2 border-b border-neutral-800 bg-neutral-900/80 px-4 py-2 backdrop-blur-sm">
-            <span className="shrink-0 text-xs text-neutral-500">
-              Showing only:
-            </span>
-            <div className="flex flex-wrap justify-center gap-1">
-              {groups
-                .filter((g) => displayGroupIds.has(g.id))
-                .map((g) => (
-                  <button
-                    key={g.id}
-                    className="flex items-center gap-1 rounded-full bg-sky-600/20 px-2 py-0.5 text-xs text-sky-300 hover:bg-sky-600/30"
-                    onClick={() => toggleDisplayFilter(g.id)}
-                  >
-                    <span className="max-w-28 truncate">{g.name}</span>
-                    <span className="text-sky-400/60 hover:text-sky-300">
-                      ✕
-                    </span>
-                  </button>
-                ))}
-            </div>
-            <button
-              className="shrink-0 text-xs text-neutral-500 hover:text-neutral-300"
-              onClick={clearDisplayFilter}
-            >
-              Show all
-            </button>
+            {displayGroupIds.size > 0 && (
+              <button
+                className="shrink-0 text-xs text-neutral-500 hover:text-neutral-300"
+                onClick={clearDisplayFilter}
+              >
+                Show all
+              </button>
+            )}
           </div>
         )}
         {viewMode === 'people' && !selectedPerson ? (
           <PeopleGrid
             persons={persons.persons}
             loading={persons.loading}
-            onPersonClick={setSelectedPerson}
+            onPersonClick={(p: Person) => {
+              personMerge.selectMode.exitSelectMode()
+              setSelectedPersonId(p.id)
+            }}
+            selectMode={personMerge.selectMode.active}
+            selectedIds={personMerge.selectMode.selectedIds}
+            onToggle={personMerge.selectMode.toggle}
+            similarGroups={persons.similarGroups}
+            onSelectGroup={(ids) => {
+              if (!personMerge.selectMode.active) {
+                personMerge.selectMode.enterSelectMode()
+              }
+              personMerge.selectMode.setSelection(new Set(ids))
+            }}
+            onRename={async (id, name) => {
+              try {
+                await renamePerson(id, name)
+                persons.invalidate()
+              } catch {
+                toast.error('Failed to rename person')
+              }
+            }}
+            containerRef={peopleContainerRef}
+            dragHandlers={peopleDragSelect.handlers}
+            selectionRect={peopleDragSelect.selectionRect}
           />
         ) : (
           <>
@@ -392,15 +813,10 @@ function Home() {
               <PersonDetail
                 key={selectedPerson.id}
                 person={selectedPerson}
-                onBack={() => setSelectedPerson(null)}
+                onBack={() => setSelectedPersonId(undefined)}
                 onRename={async (name) => {
                   try {
                     await renamePerson(selectedPerson.id, name)
-                    setSelectedPerson({
-                      ...selectedPerson,
-                      name,
-                      display_name: name,
-                    })
                     persons.invalidate()
                   } catch {
                     toast.error('Failed to rename person')
@@ -457,18 +873,80 @@ function Home() {
           onUnhide={() => {
             hidden.removeItems([...selectMode.selectedIds])
             selectMode.exitSelectMode()
-            refreshCounts()
+            invalidateCounts()
+            invalidateActiveMedia()
           }}
           onHide={() => {
             const ids = [...selectMode.selectedIds]
-            media.removeItems(ids)
+            activeSource.removeItems(ids)
             selectMode.exitSelectMode()
-            refreshCounts()
+            invalidateCounts()
+            invalidateActiveMedia()
           }}
           onFavorite={() => {
             selectMode.exitSelectMode()
-            refreshCounts()
+            invalidateCounts()
+            invalidateActiveMedia()
           }}
+          onUnfavorite={() => {
+            favorites.removeItems([...selectMode.selectedIds])
+            selectMode.exitSelectMode()
+            invalidateCounts()
+            invalidateActiveMedia()
+          }}
+        />
+      )}
+      {personMerge.selectMode.active && (
+        <div className="fixed inset-x-0 bottom-0 z-40 flex items-center justify-between gap-2 border-t border-neutral-700 bg-neutral-900 px-4 py-2">
+          <span className="text-sm text-neutral-300">
+            {personMerge.selectMode.selectedCount} selected
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              className="rounded px-2 py-1 text-xs text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
+              onClick={() => personMerge.selectMode.selectAll(persons.persons)}
+            >
+              Select All
+            </button>
+            <button
+              className="rounded px-2 py-1 text-xs text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
+              onClick={personMerge.selectMode.deselectAll}
+            >
+              Deselect
+            </button>
+            <button
+              className="rounded bg-sky-600 px-3 py-1 text-xs text-white hover:bg-sky-500 disabled:opacity-40"
+              disabled={
+                personMerge.selectMode.selectedCount < 2 || personMerge.merging
+              }
+              onClick={personMerge.openKeeperPicker}
+            >
+              {personMerge.merging ? 'Merging...' : 'Merge'}
+            </button>
+            <button
+              className="rounded p-1 text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300"
+              onClick={personMerge.selectMode.exitSelectMode}
+            >
+              <svg
+                className="h-4 w-4"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path d="M4 4l8 8M12 4l-8 8" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+      {personMerge.showKeeperPicker && (
+        <KeepPersonPicker
+          persons={persons.persons.filter((p) =>
+            personMerge.selectMode.selectedIds.has(p.id),
+          )}
+          onSelect={personMerge.executeMerge}
+          onClose={personMerge.closeKeeperPicker}
         />
       )}
       {showMergeModal && selectedPerson && (
@@ -489,6 +967,9 @@ function Home() {
           }}
           onClose={() => setShowMergeModal(false)}
         />
+      )}
+      {showShortcuts && (
+        <ShortcutsModal onClose={() => setShowShortcuts(false)} />
       )}
     </div>
   )
