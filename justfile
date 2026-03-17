@@ -1,3 +1,7 @@
+# List available commands
+default:
+    @just --list
+
 # Start backend, frontend, and Caddy (HTTP/2) dev servers
 dev:
     #!/usr/bin/env bash
@@ -40,3 +44,19 @@ test:
 install:
     cd backend && uv sync && uv pip install -e ".[dev]"
     cd frontend && bun install
+
+# Build and start with Docker Compose
+docker:
+	docker compose up --build
+
+# Start Docker Compose (no rebuild)
+docker-up:
+	docker compose up
+
+# Stop Docker Compose
+docker-down:
+	docker compose down
+
+# View Docker logs
+docker-logs:
+	docker compose logs -f
