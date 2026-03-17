@@ -8,6 +8,7 @@ import {
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { Toaster } from 'sonner'
+import { useTheme } from '#/hooks/useTheme'
 import appCss from '#/styles.css?url'
 
 const queryClient = new QueryClient({
@@ -31,10 +32,13 @@ export const Route = createRootRoute({
 })
 
 function RootComponent() {
+  const { theme } = useTheme()
+  const toasterTheme = theme === 'system' ? 'system' : theme
+
   return (
     <QueryClientProvider client={queryClient}>
       <Outlet />
-      <Toaster theme="dark" position="bottom-right" richColors />
+      <Toaster theme={toasterTheme} position="bottom-right" richColors />
     </QueryClientProvider>
   )
 }
@@ -44,12 +48,12 @@ function NotFound() {
     <div className="flex min-h-screen items-center justify-center">
       <div className="text-center">
         <h1 className="text-4xl font-bold">Page not found</h1>
-        <p className="mt-2 text-neutral-400">
+        <p className="mt-2 text-text-soft">
           The page you're looking for doesn't exist.
         </p>
         <Link
           to="/"
-          className="mt-4 inline-block text-blue-400 hover:underline"
+          className="mt-4 inline-block text-accent hover:underline"
         >
           Go home
         </Link>
@@ -63,8 +67,14 @@ function RootDocument({ children }: { children: ReactNode }) {
     <html lang="en" suppressHydrationWarning>
       <head>
         <HeadContent />
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              '(function(){var t=localStorage.getItem("theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t);else document.documentElement.removeAttribute("data-theme")})()',
+          }}
+        />
       </head>
-      <body className="bg-neutral-950 text-neutral-200 font-sans antialiased">
+      <body className="bg-base text-text font-sans antialiased">
         {children}
         <Scripts />
       </body>
