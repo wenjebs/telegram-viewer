@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.venv/
+.env
+telegram_viewer.db
+tg_session.session
+cache/
+.pytest_cache/
+tests/
