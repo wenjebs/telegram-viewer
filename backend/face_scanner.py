@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+import os
 from pathlib import Path
 
 import cv2
 import numpy as np
 from PIL import Image
 
+from utils import utc_now_iso
 from database import (
     bulk_assign_persons,
     clear_person_assignments,
@@ -22,8 +23,10 @@ from database import (
 
 logger = logging.getLogger(__name__)
 
-CACHE_DIR = Path(__file__).parent / "cache"
+CACHE_DIR = Path(os.getenv("CACHE_DIR", str(Path(__file__).parent / "cache")))
 FACE_CACHE_DIR = CACHE_DIR / "faces"
+MIN_CONFIDENCE = 0.5
+MIN_FACE_SIZE = 0.02  # 2% of image dimension
 
 _face_app = None
 
@@ -122,6 +125,7 @@ async def scan_faces(db, tg, force_rescan: bool = False) -> None:
                     break
 
                 batch_media_ids = []
+                batch_face_counts: dict[int, int] = {}
                 for photo in batch:
                     try:
                         media_id = photo["id"]
@@ -136,6 +140,7 @@ async def scan_faces(db, tg, force_rescan: bool = False) -> None:
                                 "No image available for media %d, skipping", media_id
                             )
                             batch_media_ids.append(media_id)
+                            batch_face_counts[media_id] = 0
                             scanned += 1
                             continue
 
@@ -144,7 +149,20 @@ async def scan_faces(db, tg, force_rescan: bool = False) -> None:
                         )
 
                         if detected:
-                            now = datetime.now(tz=timezone.utc).isoformat()
+                            qualified = [
+                                f
+                                for f in detected
+                                if f["confidence"] >= MIN_CONFIDENCE
+                                and f["bbox_w"] >= MIN_FACE_SIZE
+                                and f["bbox_h"] >= MIN_FACE_SIZE
+                            ]
+                            if not qualified:
+                                scanned += 1
+                                batch_media_ids.append(media_id)
+                                batch_face_counts[media_id] = 0
+                                continue
+
+                            now = utc_now_iso()
                             face_rows = [
                                 {
                                     "media_id": media_id,
@@ -157,16 +175,18 @@ async def scan_faces(db, tg, force_rescan: bool = False) -> None:
                                     "crop_path": None,
                                     "created_at": now,
                                 }
-                                for f in detected
+                                for f in qualified
                             ]
                             face_ids = await insert_faces_batch(db, face_rows)
-                            assert len(face_ids) == len(detected), (
+                            assert len(face_ids) == len(qualified), (
                                 f"insert_faces_batch returned {len(face_ids)} IDs "
-                                f"for {len(detected)} faces"
+                                f"for {len(qualified)} faces"
                             )
 
+                            batch_face_counts[media_id] = len(qualified)
+
                             # Save crops and update crop_path
-                            for face_id, f in zip(face_ids, detected):
+                            for face_id, f in zip(face_ids, qualified):
                                 try:
                                     crop_path = await asyncio.to_thread(
                                         _save_face_crop,
@@ -182,6 +202,8 @@ async def scan_faces(db, tg, force_rescan: bool = False) -> None:
                                     logger.exception(
                                         "Failed to save crop for face %d", face_id
                                     )
+                        else:
+                            batch_face_counts[media_id] = 0
 
                         scanned += 1
                         batch_media_ids.append(media_id)
@@ -196,10 +218,12 @@ async def scan_faces(db, tg, force_rescan: bool = False) -> None:
                             "Error processing photo %d", photo.get("id", -1)
                         )
                         batch_media_ids.append(photo["id"])
+                        # Error → treat as 0 faces (mark_media_scanned defaults missing keys to 0)
+                        batch_face_counts[photo["id"]] = 0
                         scanned += 1
 
                 if batch_media_ids:
-                    await mark_media_scanned(db, batch_media_ids)
+                    await mark_media_scanned(db, batch_media_ids, batch_face_counts)
                     await db.commit()
 
             await update_face_scan_state(db, scanned_count=scanned, total_count=total)
@@ -217,6 +241,21 @@ async def scan_faces(db, tg, force_rescan: bool = False) -> None:
 
 async def cluster_faces(db) -> None:
     """Cluster face embeddings using DBSCAN and assign persons."""
+    # Purge low-confidence faces from prior scans (before filtering was added)
+    purge_cursor = await db.execute(
+        "SELECT id, crop_path FROM faces WHERE confidence < ? AND crop_path IS NOT NULL",
+        (MIN_CONFIDENCE,),
+    )
+    purge_rows = await purge_cursor.fetchall()
+    if purge_rows:
+        for row in purge_rows:
+            crop = Path(row["crop_path"])
+            if crop.exists():
+                crop.unlink()
+        await db.execute("DELETE FROM faces WHERE confidence < ?", (MIN_CONFIDENCE,))
+        await db.commit()
+        logger.info("Purged %d low-confidence faces", len(purge_rows))
+
     all_faces = await get_all_face_embeddings(db)
     if not all_faces:
         logger.info("No faces to cluster")
@@ -235,9 +274,7 @@ async def cluster_faces(db) -> None:
     from sklearn.cluster import DBSCAN
 
     labels = await asyncio.to_thread(
-        lambda: DBSCAN(eps=0.5, min_samples=2, metric="cosine")
-        .fit(embeddings)
-        .labels_
+        lambda: DBSCAN(eps=0.35, min_samples=3, metric="cosine").fit(embeddings).labels_
     )
 
     await clear_person_assignments(db)
@@ -297,7 +334,5 @@ async def _download_for_scan(tg, photo: dict) -> str | None:
         finally:
             tg.release_semaphore()
     except Exception:
-        logger.exception(
-            "Failed to download thumbnail for %s/%s", chat_id, message_id
-        )
+        logger.exception("Failed to download thumbnail for %s/%s", chat_id, message_id)
         return None

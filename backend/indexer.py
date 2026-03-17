@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import AsyncGenerator
 
 import aiosqlite
-from telethon.errors import FloodWaitError
+from telethon.errors import ChannelPrivateError, ChatForbiddenError, FloodWaitError
 from telethon.tl.types import (
     InputMessagesFilterDocument,
     InputMessagesFilterPhotos,
@@ -15,6 +16,7 @@ from telethon.tl.types import (
     MessageMediaDocument,
     MessageMediaPhoto,
 )
+from tenacity import RetryCallState, retry, retry_if_exception_type, stop_after_attempt
 
 from database import (
     get_sync_state,
@@ -28,7 +30,61 @@ logger = logging.getLogger(__name__)
 
 BATCH_SIZE = 100
 CHECKPOINT_INTERVAL = 500
-CACHE_DIR = Path(__file__).parent / "cache"
+CACHE_DIR = Path(os.getenv("CACHE_DIR", str(Path(__file__).parent / "cache")))
+
+
+def _flood_wait_seconds(retry_state: RetryCallState) -> float:
+    """Extract wait time from FloodWaitError for tenacity."""
+    exc = retry_state.outcome.exception()
+    return exc.seconds + 1 if isinstance(exc, FloodWaitError) else 0
+
+
+@retry(
+    retry=retry_if_exception_type(FloodWaitError),
+    stop=stop_after_attempt(2),
+    wait=_flood_wait_seconds,
+    before_sleep=lambda rs: logger.warning(
+        "FloodWait during preview counts for %ss, retrying...",
+        rs.outcome.exception().seconds,
+    ),
+    reraise=True,
+)
+async def _fetch_media_counts(
+    tg: TelegramClientWrapper, chat_id: int, min_id: int = 0
+) -> dict:
+    photo_result = await tg.client.get_messages(
+        chat_id, filter=InputMessagesFilterPhotos(), limit=0, min_id=min_id
+    )
+    video_result = await tg.client.get_messages(
+        chat_id, filter=InputMessagesFilterVideo(), limit=0, min_id=min_id
+    )
+    doc_result = await tg.client.get_messages(
+        chat_id, filter=InputMessagesFilterDocument(), limit=0, min_id=min_id
+    )
+    photos = getattr(photo_result, "total", 0) or 0
+    videos = getattr(video_result, "total", 0) or 0
+    documents = getattr(doc_result, "total", 0) or 0
+    return {
+        "photos": photos,
+        "videos": videos,
+        "documents": documents,
+        "total": photos + videos + documents,
+    }
+
+
+async def get_new_media_counts(
+    tg: TelegramClientWrapper,
+    chat_id: int,
+    min_id: int = 0,
+) -> dict | None:
+    """Get estimated new media counts since min_id. Returns None if chat is inaccessible."""
+    try:
+        return await _fetch_media_counts(tg, chat_id, min_id)
+    except (ChatForbiddenError, ChannelPrivateError):
+        return None
+    except Exception:
+        logger.exception("Failed to get preview counts for chat_id=%s", chat_id)
+        return None
 
 
 @dataclass
@@ -44,27 +100,23 @@ async def index_chat(
     db: aiosqlite.Connection,
     chat_id: int,
     chat_name: str,
+    precomputed_counts: dict | None = None,
 ) -> AsyncGenerator[SyncEvent, None]:
     """Index media from a chat using server-side filters. Yields SyncEvents."""
     state = await get_sync_state(db, chat_id)
     min_id = state["last_msg_id"] if state else 0
 
-    # Get estimated totals upfront (single API call per filter, no messages fetched)
-    photo_result = await tg.client.get_messages(
-        chat_id, filter=InputMessagesFilterPhotos(), limit=0
-    )
-    video_result = await tg.client.get_messages(
-        chat_id, filter=InputMessagesFilterVideo(), limit=0
-    )
-    doc_result = await tg.client.get_messages(
-        chat_id, filter=InputMessagesFilterDocument(), limit=0
-    )
-    photo_total = getattr(photo_result, "total", 0) or 0
-    video_total = getattr(video_result, "total", 0) or 0
-    doc_total = getattr(doc_result, "total", 0) or 0
-    total = photo_total + video_total + doc_total
+    # Get estimated NEW item counts (using min_id to skip already-synced items)
+    if precomputed_counts is not None:
+        total = precomputed_counts["total"]
+    else:
+        counts = await _fetch_media_counts(tg, chat_id, min_id=min_id)
+        total = counts["total"]
 
     if total == 0:
+        await upsert_sync_state(
+            db, chat_id=chat_id, chat_name=chat_name, active=True, last_msg_id=min_id
+        )
         yield SyncEvent(type="done")
         return
 

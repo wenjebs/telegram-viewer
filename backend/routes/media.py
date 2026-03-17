@@ -9,11 +9,11 @@ import time
 import uuid
 import zipfile
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from starlette.background import BackgroundTask
 from starlette.responses import StreamingResponse
 
@@ -21,6 +21,7 @@ from database import (
     get_media_page,
     get_media_by_id,
     get_media_by_ids,
+    get_media_count,
     hide_media_item,
     hide_media_items,
     unhide_media_items,
@@ -29,11 +30,12 @@ from database import (
     favorite_media_item,
     favorite_media_items,
     unfavorite_media_item,
+    unfavorite_media_items,
     get_favorites_media_page,
     get_favorites_count,
 )
 from deps import get_db, get_tg, get_zip_jobs, get_background_tasks
-from utils import fire_and_forget
+from utils import fire_and_forget, parse_cursor, build_media_response
 
 if TYPE_CHECKING:
     import aiosqlite
@@ -46,47 +48,39 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/media", tags=["media"])
 
-CACHE_DIR = Path(__file__).parent.parent / "cache"
+CACHE_DIR = Path(os.getenv("CACHE_DIR", str(Path(__file__).parent.parent / "cache")))
+
+_download_registry: dict[int, asyncio.Future[str]] = {}
 
 
-# region Helpers
-def _parse_cursor(cursor: str | None) -> tuple[int | None, str | None]:
-    """Parse a cursor string into (cursor_id, cursor_value).
-
-    Supports composite cursors ("value|id") and plain id cursors ("123").
-    Raises HTTPException 400 on malformed input.
-    """
-    if cursor is None:
-        return None, None
-    try:
-        if "|" in cursor:
-            value, cid = cursor.rsplit("|", 1)
-            return int(cid), value
-        return int(cursor), None
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid cursor")
-
-
-def _build_media_response(
-    items: list[dict],
-    limit: int,
-    *,
-    cursor_column: str = "date",
-) -> dict:
-    """Normalize dates, strip non-serializable fields, and compute next_cursor."""
-    for item in items:
-        if " " in item["date"]:
-            item["date"] = item["date"].replace(" ", "T", 1)
-        item.pop("file_ref", None)
-    if not items or len(items) < limit:
-        next_cursor = None
+def _resolve_future(fut: asyncio.Future, task: asyncio.Task) -> None:
+    if fut.done():
+        return
+    if task.cancelled():
+        fut.cancel()
+    elif exc := task.exception():
+        fut.set_exception(exc)
     else:
-        last = items[-1]
-        next_cursor = f"{last[cursor_column]}|{last['id']}"
-    return {"items": items, "next_cursor": next_cursor}
+        fut.set_result(task.result())
 
 
-# endregion
+async def _cache_media(tg, db, item: dict) -> str:
+    """Download media from Telegram, write to cache, update DB. Returns cached file path."""
+    media_id = item["id"]
+    mime = item.get("mime_type", "application/octet-stream")
+    data = await _download_full(tg, item)
+    await asyncio.to_thread(CACHE_DIR.mkdir, parents=True, exist_ok=True)
+    ext = mimetypes.guess_extension(mime) or ""
+    download_path = CACHE_DIR / f"{media_id}_full{ext}"
+    await asyncio.to_thread(download_path.write_bytes, data)
+    await db.execute(
+        "UPDATE media_items SET download_path = ? WHERE id = ?",
+        (str(download_path), media_id),
+    )
+    await db.commit()
+    return str(download_path)
+
+
 
 
 # region List / Download zip
@@ -99,8 +93,9 @@ async def list_media(
     type: str | None = Query(None),
     date_from: str | None = Query(None),
     date_to: str | None = Query(None),
+    faces: Literal["none", "solo", "group"] | None = Query(None),
 ):
-    cursor_id, cursor_value = _parse_cursor(cursor)
+    cursor_id, cursor_value = parse_cursor(cursor)
     group_ids = [int(g) for g in groups.split(",")] if groups else None
     items = await get_media_page(
         db,
@@ -111,8 +106,9 @@ async def list_media(
         media_type=type,
         date_from=date_from,
         date_to=date_to,
+        faces=faces,
     )
-    return _build_media_response(items, limit, cursor_column="date")
+    return build_media_response(items, limit, cursor_column="date")
 
 
 class DownloadZipRequest(BaseModel):
@@ -363,11 +359,12 @@ async def zip_download(
 class BatchIdsRequest(BaseModel):
     media_ids: list[int]
 
-    @property
-    def validated_ids(self) -> list[int]:
-        if not self.media_ids:
-            raise HTTPException(status_code=400, detail="No media IDs provided")
-        return self.media_ids
+    @field_validator("media_ids")
+    @classmethod
+    def check_not_empty(cls, v: list[int]) -> list[int]:
+        if not v:
+            raise ValueError("No media IDs provided")
+        return v
 
 
 UnhideBatchRequest = BatchIdsRequest
@@ -379,14 +376,14 @@ async def list_hidden_media(
     cursor: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
 ):
-    cursor_id, cursor_value = _parse_cursor(cursor)
+    cursor_id, cursor_value = parse_cursor(cursor)
     items = await get_hidden_media_page(
         db,
         cursor_id=cursor_id,
         cursor_value=cursor_value,
         limit=limit,
     )
-    return _build_media_response(items, limit, cursor_column="hidden_at")
+    return build_media_response(items, limit, cursor_column="hidden_at")
 
 
 @router.get("/hidden/count")
@@ -400,7 +397,7 @@ async def unhide_media_batch(
     body: UnhideBatchRequest,
     db: aiosqlite.Connection = Depends(get_db),
 ):
-    await unhide_media_items(db, body.validated_ids)
+    await unhide_media_items(db, body.media_ids)
     return {"success": True}
 
 
@@ -409,7 +406,7 @@ async def hide_media_batch(
     body: BatchIdsRequest,
     db: aiosqlite.Connection = Depends(get_db),
 ):
-    await hide_media_items(db, body.validated_ids)
+    await hide_media_items(db, body.media_ids)
     return {"success": True}
 
 
@@ -418,7 +415,16 @@ async def favorite_media_batch(
     body: BatchIdsRequest,
     db: aiosqlite.Connection = Depends(get_db),
 ):
-    await favorite_media_items(db, body.validated_ids)
+    await favorite_media_items(db, body.media_ids)
+    return {"success": True}
+
+
+@router.post("/unfavorite-batch")
+async def unfavorite_media_batch(
+    body: BatchIdsRequest,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    await unfavorite_media_items(db, body.media_ids)
     return {"success": True}
 
 
@@ -428,19 +434,25 @@ async def list_favorites_media(
     cursor: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
 ):
-    cursor_id, cursor_value = _parse_cursor(cursor)
+    cursor_id, cursor_value = parse_cursor(cursor)
     items = await get_favorites_media_page(
         db,
         cursor_id=cursor_id,
         cursor_value=cursor_value,
         limit=limit,
     )
-    return _build_media_response(items, limit, cursor_column="favorited_at")
+    return build_media_response(items, limit, cursor_column="favorited_at")
 
 
 @router.get("/favorites/count")
 async def favorites_media_count(db: aiosqlite.Connection = Depends(get_db)):
     count = await get_favorites_count(db)
+    return {"count": count}
+
+
+@router.get("/count")
+async def media_count(db: aiosqlite.Connection = Depends(get_db)):
+    count = await get_media_count(db)
     return {"count": count}
 
 
@@ -538,6 +550,7 @@ async def download_media(
     media_id: int,
     db: aiosqlite.Connection = Depends(get_db),
     tg: TelegramClientWrapper = Depends(get_tg),
+    bg_tasks: set[asyncio.Task] = Depends(get_background_tasks),
 ):
     item = await get_media_by_id(db, media_id)
     if not item:
@@ -552,10 +565,22 @@ async def download_media(
             item["download_path"], media_type=mime, headers=cache_headers
         )
 
-    # Non-video: buffer fully, cache, return FileResponse (range request support)
+    # Non-video: fire background task, shield the await so disconnects don't cancel it
     if item.get("media_type") != "video":
+        # Join an in-flight download if one exists
+        if media_id in _download_registry:
+            fut = _download_registry[media_id]
+        else:
+            fut = asyncio.get_event_loop().create_future()
+            _download_registry[media_id] = fut
+            task = fire_and_forget(_cache_media(tg, db, item), bg_tasks)
+            task.add_done_callback(lambda t: (
+                _resolve_future(fut, t),
+                _download_registry.pop(media_id, None),
+            ))
+
         try:
-            data = await _download_full(tg, item)
+            download_path = await asyncio.shield(fut)
         except HTTPException:
             raise
         except Exception:
@@ -564,18 +589,7 @@ async def download_media(
                 status_code=502, detail="Failed to download media from Telegram"
             )
 
-        await asyncio.to_thread(CACHE_DIR.mkdir, parents=True, exist_ok=True)
-        ext = mimetypes.guess_extension(mime) or ""
-        download_path = CACHE_DIR / f"{media_id}_full{ext}"
-        await asyncio.to_thread(download_path.write_bytes, data)
-
-        await db.execute(
-            "UPDATE media_items SET download_path = ? WHERE id = ?",
-            (str(download_path), media_id),
-        )
-        await db.commit()
-
-        return FileResponse(str(download_path), media_type=mime, headers=cache_headers)
+        return FileResponse(download_path, media_type=mime, headers=cache_headers)
 
     # Video: stream from Telegram so browser can start playback immediately
     await asyncio.to_thread(CACHE_DIR.mkdir, parents=True, exist_ok=True)
@@ -603,6 +617,17 @@ async def download_media(
             except BaseException:
                 f.close()
                 tmp_path.unlink(missing_ok=True)
+                # Re-download fully in the background so the file gets cached
+                if media_id not in _download_registry:
+                    bg_fut = asyncio.get_event_loop().create_future()
+                    bg_task = fire_and_forget(
+                        _cache_media(tg, db, item), bg_tasks
+                    )
+                    bg_task.add_done_callback(lambda t: (
+                        _resolve_future(bg_fut, t),
+                        _download_registry.pop(media_id, None),
+                    ))
+                    _download_registry[media_id] = bg_fut
                 raise
             else:
                 f.close()

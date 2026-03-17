@@ -19,6 +19,7 @@ from telegram_client import TelegramClientWrapper
 load_dotenv()
 
 DB_PATH = os.getenv("DB_PATH", "telegram_viewer.db")
+SESSION_PATH = os.getenv("SESSION_PATH", "tg_session")
 
 
 @asynccontextmanager
@@ -40,6 +41,7 @@ async def lifespan(app: FastAPI):
     tg = TelegramClientWrapper(
         api_id=api_id,
         api_hash=api_hash,
+        session_path=SESSION_PATH,
         background_tasks=app.state.background_tasks,
     )
     tg.set_db(db)
@@ -60,9 +62,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Telegram Media Viewer", lifespan=lifespan)
 
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
+
 app.add_middleware(
     CORSMiddleware,  # type: ignore[arg-type]
-    allow_origins=["http://localhost:3000"],
+    allow_origins=CORS_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
