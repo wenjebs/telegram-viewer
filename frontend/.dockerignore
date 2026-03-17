@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.oxfmtrc.json
+.oxlintrc.json
+src/**/__tests__/
+src/test/
+vitest.config.ts
