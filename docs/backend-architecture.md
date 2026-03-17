@@ -105,7 +105,7 @@ Telethon wrapper (`TelegramClientWrapper`) with:
 
 ## Key Modules
 
-- `main.py` — FastAPI app, lifespan (init DB + TG client), CORS (localhost:3000), routers
+- `main.py` — FastAPI app, lifespan (init DB + TG client), CORS (configurable via `CORS_ORIGINS` env var, default localhost:3000), routers. Env vars: `DB_PATH`, `SESSION_PATH`, `CORS_ORIGINS`
 - `database.py` — schema init, CRUD, pagination, sync state, hide/unhide/favorite, face/person queries
 - `telegram_client.py` — Telethon wrapper with caching/semaphore
 - `indexer.py` — media extraction, batch processing, SyncEvent generator

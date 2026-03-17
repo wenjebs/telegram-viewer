@@ -56,11 +56,23 @@ docker:
       echo "Adding tele.view to /etc/hosts (requires password):"
       sudo sh -c 'echo "127.0.0.1 tele.view" >> /etc/hosts'
     fi
-    docker compose up --build
+    docker compose --profile prod up --build
+
+# Start with Docker Compose + hot reload (frontend & backend source mounted)
+docker-dev:
+    #!/usr/bin/env bash
+    caddy stop 2>/dev/null || true
+    lsof -ti :443 -sTCP:LISTEN | xargs kill -9 2>/dev/null || true
+    docker compose down 2>/dev/null || true
+    if ! grep -q 'tele.view' /etc/hosts; then
+      echo "Adding tele.view to /etc/hosts (requires password):"
+      sudo sh -c 'echo "127.0.0.1 tele.view" >> /etc/hosts'
+    fi
+    docker compose --profile dev up --build
 
 # Start Docker Compose (no rebuild)
 docker-up:
-	docker compose up
+	docker compose --profile prod up
 
 # Stop Docker Compose
 docker-down:

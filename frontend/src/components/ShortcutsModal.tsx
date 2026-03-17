@@ -16,6 +16,7 @@ const groups: ShortcutGroup[] = [
       { key: 'F', description: 'Go to favorites view' },
       { key: 'H', description: 'Toggle hidden media view' },
       { key: 'Shift+H', description: 'Toggle hidden chats' },
+      { key: 'Shift+D', description: 'Hide selected groups' },
       { key: 'Esc', description: 'Exit select mode / close modal' },
     ],
   },

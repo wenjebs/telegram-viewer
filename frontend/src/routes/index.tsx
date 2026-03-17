@@ -512,6 +512,17 @@ function Home() {
     lightboxItem,
     handleToggleHiddenDialogs,
   ])
+  useHotkeys(
+    'shift+d',
+    async () => {
+      if (lightboxItem || selectMode.active) return
+      const activeGroups = groups.filter((g) => g.active)
+      for (const g of activeGroups) {
+        await handleHideDialog(g)
+      }
+    },
+    [lightboxItem, selectMode.active, groups],
+  )
 
   // #region Render
   if (authenticated === null) return null

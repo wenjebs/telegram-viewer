@@ -2,7 +2,7 @@
 
 Local web app that connects to a user's Telegram account, indexes media (photos, videos, documents) from selected groups/channels, and presents them in a browsable gallery.
 
-**Architecture:** FastAPI backend + React 19 SPA frontend, SQLite database, single-user local-only deployment. No Docker or CI/CD. Monorepo with `backend/` and `frontend/` directories.
+**Architecture:** FastAPI backend + React 19 SPA frontend, SQLite database, single-user local-only deployment. Docker Compose with profiles (`prod` / `dev`) for distribution via `https://tele.view`. One-command setup via `./setup.sh` (configures `.env`, `/etc/hosts`, trusts Caddy CA cert, builds containers). Monorepo with `backend/` and `frontend/` directories.
 
 **Key flows:**
 - Auth: phone → verification code → optional 2FA password → session persisted via Telethon session file

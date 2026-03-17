@@ -2,7 +2,7 @@
 
 ## Stack
 
-React 19, TanStack Start/Router (file-based routing), TanStack Query (data fetching + caching), Tailwind CSS v4, Vite 7, TypeScript strict, bun package manager. Dark theme (neutral-950 bg), Manrope font.
+React 19, TanStack Start/Router (file-based routing), TanStack Query (data fetching + caching), Tailwind CSS v4, Vite 7, TypeScript strict, bun package manager. Light/dark/system theme support (theme tokens, `data-theme` attribute), Manrope font.
 
 ## Components
 
@@ -20,6 +20,7 @@ React 19, TanStack Start/Router (file-based routing), TanStack Query (data fetch
 - **ShortcutsModal** — keyboard shortcuts reference modal (opened via `?` / shift+slash), lists all app hotkeys grouped by context (General, Lightbox, Selection mode)
 - **KeepPersonPicker** — modal to select which person to keep when merging duplicate persons
 - **GroupOverflowMenu** — overflow menu for group actions (hide, unsync)
+- **ThemeToggle** — theme switcher (light/dark/system) with icon cycling
 
 ## Hooks
 
@@ -37,6 +38,7 @@ React 19, TanStack Start/Router (file-based routing), TanStack Query (data fetch
 - **usePersons(enabled, similarityThreshold)** — `useQuery` for person list + similar-groups query (enabled when 2+ persons). Returns `{ persons, loading, similarGroups, refetch, invalidate }`
 - **usePersonMerge({ persons, selectedPerson, ... })** — manages person merge workflow: select mode for picking merge targets, keep-person picker modal, merge execution with optimistic invalidation
 - **usePersonMedia(personId, enabled)** — `useInfiniteQuery` for media items containing a person's face. Returns `{ items, loading, error, hasMore, fetchNextPage, removeItems }`
+- **useTheme** — theme state management (light/dark/system). Persists to localStorage, applies `data-theme` attribute to `<html>`. Returns `{ theme, setTheme }`
 - **usePrefetch(items, enabled)** — background prefetch of loaded media items (photos + videos). Uses TanStack Query `prefetchQuery` with `staleTime/gcTime: Infinity` for dedup and tracking. Concurrent queue (max 3), LIFO order (newest pages prefetched first via `unshift`), new pages don't abort in-flight downloads, AbortController cleanup on unmount. Warms both backend disk cache and browser HTTP cache so lightbox loads are instant.
 
 ## API Client (`src/api/client.ts`)
@@ -51,7 +53,7 @@ Zod schemas as single source of truth — TypeScript types are inferred via `z.i
 
 3-column: sidebar (resizable left panel) | media grid (flex-1 scrollable center) | lightbox (fixed z-50 overlay) + selection bar (fixed z-40 bottom) + shortcuts modal (? key). View indicator banner appears above grid on non-normal views (icon + label + close button: "Hidden Media", "Favorites", "People", or person name). Display filter pills bar below banner when active (with "Show all" reset). ViewMode state ('normal'|'hidden'|'favorites'|'people') switches grid content. People view shows PeopleGrid with face scan controls in sidebar.
 
-Root route (`__root.tsx`) wraps app in `QueryClientProvider` (staleTime: 5 min, refetchOnWindowFocus: true) and mounts `<Toaster />` from sonner (dark theme, bottom-right, rich colors). Home component manages auth state locally; filter/view/navigation state is URL-driven via TanStack Router `validateSearch` with Zod schema. Data fetching is declarative via TanStack Query hooks — no manual fetch effects.
+Root route (`__root.tsx`) wraps app in `QueryClientProvider` (staleTime: 5 min, refetchOnWindowFocus: true) and mounts `<Toaster />` from sonner (theme-aware via useTheme, bottom-right, rich colors). Injects inline script to prevent theme flash on load. Home component manages auth state locally; filter/view/navigation state is URL-driven via TanStack Router `validateSearch` with Zod schema. Data fetching is declarative via TanStack Query hooks — no manual fetch effects.
 
 ## URL Search Params
 

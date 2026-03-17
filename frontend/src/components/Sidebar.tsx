@@ -132,15 +132,7 @@ export default function Sidebar({
   const [searchQuery, setSearchQueryLocal] = useState(initialSearchQuery)
   const deferredQuery = useDeferredValue(searchQuery)
   const [chatsCollapsed, setChatsCollapsed] = useState(false)
-  const [hoveredGroup, setHoveredGroup] = useState<Group | null>(null)
   useHotkeys('c', () => setChatsCollapsed((p) => !p))
-  useHotkeys(
-    'h',
-    () => {
-      if (hoveredGroup && onHideDialog) onHideDialog(hoveredGroup)
-    },
-    [hoveredGroup, onHideDialog],
-  )
   const dragging = useRef(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
@@ -348,12 +340,6 @@ export default function Sidebar({
                       : 'opacity-50 hover:bg-hover hover:opacity-75'
                   }`}
                   onClick={() => onToggleGroup(g)}
-                  onMouseEnter={() => setHoveredGroup(g)}
-                  onMouseLeave={() =>
-                    setHoveredGroup((prev) =>
-                      prev?.id === g.id ? null : prev,
-                    )
-                  }
                   title={g.active ? 'Click to deactivate' : 'Click to activate'}
                 >
                   {g.type && CHAT_TYPE_ICONS[g.type] && (
