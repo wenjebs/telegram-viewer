@@ -50,7 +50,7 @@ docker:
     #!/usr/bin/env bash
     # Stop dev servers if running (they bind the same ports)
     caddy stop 2>/dev/null || true
-    lsof -ti :443 -sTCP:LISTEN | xargs kill -9 2>/dev/null || true
+    # Note: don't kill :443 blindly — it can kill OrbStack/Docker
     docker compose down 2>/dev/null || true
     if ! grep -q 'tele.view' /etc/hosts; then
       echo "Adding tele.view to /etc/hosts (requires password):"
@@ -62,7 +62,7 @@ docker:
 docker-dev:
     #!/usr/bin/env bash
     caddy stop 2>/dev/null || true
-    lsof -ti :443 -sTCP:LISTEN | xargs kill -9 2>/dev/null || true
+    # Note: don't kill :443 blindly — it can kill OrbStack/Docker
     docker compose down 2>/dev/null || true
     if ! grep -q 'tele.view' /etc/hosts; then
       echo "Adding tele.view to /etc/hosts (requires password):"
