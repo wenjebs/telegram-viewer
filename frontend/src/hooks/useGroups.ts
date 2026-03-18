@@ -36,6 +36,21 @@ export function useGroups({ enabled = true }: UseGroupsOptions = {}) {
     [queryClient],
   )
 
+  const bulkSetActive = useCallback(
+    async (targetGroups: Group[], active: boolean) => {
+      const toChange = targetGroups.filter((g) => g.active !== active)
+      if (toChange.length === 0) return
+      await Promise.all(
+        toChange.map((g) => toggleGroupActive(g.id, active, g.name)),
+      )
+      const ids = new Set(toChange.map((g) => g.id))
+      queryClient.setQueryData<Group[]>(['groups'], (prev) =>
+        prev?.map((g) => (ids.has(g.id) ? { ...g, active } : g)),
+      )
+    },
+    [queryClient],
+  )
+
   const unsyncGroup = useCallback(
     async (groupId: number) => {
       await unsyncGroupApi(groupId)
@@ -65,6 +80,7 @@ export function useGroups({ enabled = true }: UseGroupsOptions = {}) {
     loading,
     error: error ? String(error) : null,
     toggleActive,
+    bulkSetActive,
     unsyncGroup,
     activeGroupIds,
     refetch,

@@ -140,4 +140,158 @@ describe('useGroups', () => {
     )
     expect(previewCalls.length).toBe(0)
   })
+
+  it('bulkSetActive activates all inactive groups', async () => {
+    const g1 = makeGroup({ active: false })
+    const g2 = makeGroup({ active: false })
+    const g3 = makeGroup({ active: true })
+    const activeIds = new Set<number>([g3.id])
+
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : (input as Request).url
+      if (url.includes('/active')) {
+        const id = Number(url.match(/\/groups\/(\d+)\/active/)?.[1])
+        if (!Number.isNaN(id)) activeIds.add(id)
+        return new Response(JSON.stringify({ success: true }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (url.includes('/preview-counts')) {
+        return new Response(JSON.stringify({}), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response(
+        JSON.stringify([
+          { ...g1, active: activeIds.has(g1.id) },
+          { ...g2, active: activeIds.has(g2.id) },
+          { ...g3, active: activeIds.has(g3.id) },
+        ]),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      )
+    }) as unknown as typeof fetch
+
+    const { result } = renderHook(() => useGroups(), {
+      wrapper: createWrapper(),
+    })
+    await waitFor(() => expect(result.current.groups.length).toBe(3))
+
+    await act(async () => {
+      await result.current.bulkSetActive([g1, g2], true)
+    })
+
+    // Should have called PATCH for g1 and g2 (not g3 which is already active)
+    const patchCalls = (
+      globalThis.fetch as ReturnType<typeof vi.fn>
+    ).mock.calls.filter((args: unknown[]) =>
+      (args[0] as string).includes('/active'),
+    )
+    expect(patchCalls.length).toBe(2)
+    await waitFor(() =>
+      expect(result.current.groups.find((g) => g.id === g1.id)!.active).toBe(
+        true,
+      ),
+    )
+    await waitFor(() =>
+      expect(result.current.groups.find((g) => g.id === g2.id)!.active).toBe(
+        true,
+      ),
+    )
+  })
+
+  it('bulkSetActive skips groups already matching target state', async () => {
+    const g1 = makeGroup({ active: true })
+
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : (input as Request).url
+      if (url.includes('/preview-counts')) {
+        return new Response(JSON.stringify({}), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response(JSON.stringify([g1]), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }) as unknown as typeof fetch
+
+    const { result } = renderHook(() => useGroups(), {
+      wrapper: createWrapper(),
+    })
+    await waitFor(() => expect(result.current.groups.length).toBe(1))
+
+    await act(async () => {
+      // g1 is already active — no PATCH should fire
+      await result.current.bulkSetActive([g1], true)
+    })
+
+    const patchCalls = (
+      globalThis.fetch as ReturnType<typeof vi.fn>
+    ).mock.calls.filter((args: unknown[]) =>
+      (args[0] as string).includes('/active'),
+    )
+    expect(patchCalls.length).toBe(0)
+  })
+
+  it('bulkSetActive deactivates groups', async () => {
+    const g1 = makeGroup({ active: true })
+    const g2 = makeGroup({ active: true })
+    const inactiveIds = new Set<number>()
+
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : (input as Request).url
+      if (url.includes('/active')) {
+        const id = Number(url.match(/\/groups\/(\d+)\/active/)?.[1])
+        if (!Number.isNaN(id)) inactiveIds.add(id)
+        return new Response(JSON.stringify({ success: true }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (url.includes('/preview-counts')) {
+        return new Response(JSON.stringify({}), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response(
+        JSON.stringify([
+          { ...g1, active: !inactiveIds.has(g1.id) },
+          { ...g2, active: !inactiveIds.has(g2.id) },
+        ]),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      )
+    }) as unknown as typeof fetch
+
+    const { result } = renderHook(() => useGroups(), {
+      wrapper: createWrapper(),
+    })
+    await waitFor(() => expect(result.current.groups.length).toBe(2))
+
+    await act(async () => {
+      await result.current.bulkSetActive([g1, g2], false)
+    })
+
+    await waitFor(() =>
+      expect(result.current.groups.every((g) => !g.active)).toBe(true),
+    )
+  })
 })
