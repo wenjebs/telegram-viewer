@@ -73,6 +73,7 @@ vi.mock('#/hooks/useGroups', () => ({
   useGroups: vi.fn(() => ({
     groups: mockGroups,
     toggleActive: mockToggleActive,
+    bulkSetActive: vi.fn(),
     previewCounts: {},
     activeGroupIds: [1],
     unsyncGroup: vi.fn(),
@@ -117,6 +118,7 @@ describe('Sidebar', () => {
     ;(useGroups as Mock).mockReturnValue({
       groups: mockGroups,
       toggleActive: mockToggleActive,
+      bulkSetActive: vi.fn(),
       previewCounts: {},
       activeGroupIds: [1],
       unsyncGroup: vi.fn(),
@@ -236,5 +238,59 @@ describe('Sidebar', () => {
       wrapper: createWrapper(),
     })
     expect(screen.queryByRole('button', { name: /filters/i })).toBeNull()
+  })
+
+  it('renders Select all and Deselect all buttons', () => {
+    render(<Sidebar {...defaultProps} />, { wrapper: createWrapper() })
+    expect(screen.getByText('Select all')).toBeTruthy()
+    expect(screen.getByText('Deselect all')).toBeTruthy()
+  })
+
+  it('Select all calls bulkSetActive with filteredGroups and true', () => {
+    const mockBulkSetActive = vi.fn()
+    ;(useGroups as Mock).mockReturnValue({
+      groups: mockGroups,
+      toggleActive: mockToggleActive,
+      bulkSetActive: mockBulkSetActive,
+      previewCounts: {},
+      activeGroupIds: [1],
+      unsyncGroup: vi.fn(),
+      refetch: vi.fn(),
+    })
+    render(<Sidebar {...defaultProps} />, { wrapper: createWrapper() })
+    fireEvent.click(screen.getByText('Select all'))
+    expect(mockBulkSetActive).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 1 }),
+        expect.objectContaining({ id: 2 }),
+      ]),
+      true,
+    )
+  })
+
+  it('Deselect all calls bulkSetActive with all active groups and false', () => {
+    const mockBulkSetActive = vi.fn()
+    ;(useGroups as Mock).mockReturnValue({
+      groups: mockGroups,
+      toggleActive: mockToggleActive,
+      bulkSetActive: mockBulkSetActive,
+      previewCounts: {},
+      activeGroupIds: [1],
+      unsyncGroup: vi.fn(),
+      refetch: vi.fn(),
+    })
+    render(<Sidebar {...defaultProps} />, { wrapper: createWrapper() })
+    fireEvent.click(screen.getByText('Deselect all'))
+    // Only active groups should be passed (mockGroups[0] has active: true)
+    expect(mockBulkSetActive).toHaveBeenCalledWith(
+      [expect.objectContaining({ id: 1, active: true })],
+      false,
+    )
+  })
+
+  it('shows correct active count in action row', () => {
+    render(<Sidebar {...defaultProps} />, { wrapper: createWrapper() })
+    // 1 of 2 groups in filteredGroups is active
+    expect(screen.getByText('1 / 2')).toBeTruthy()
   })
 })

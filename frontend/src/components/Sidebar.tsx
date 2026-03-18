@@ -176,7 +176,7 @@ export default function Sidebar({
   const width = useAppStore((s) => s.sidebarWidth)
   const setSidebarWidth = useAppStore((s) => s.setSidebarWidth)
 
-  const { groups, toggleActive, previewCounts } = useGroups()
+  const { groups, toggleActive, bulkSetActive, previewCounts } = useGroups()
 
   const showHiddenDialogs = search.hiddenDialogs ?? false
   const chatTypeFilter = search.chat ?? null
@@ -445,91 +445,122 @@ export default function Sidebar({
             </div>
           </div>
           {!chatsCollapsed && (
-            <div className="flex-1 overflow-y-auto p-2">
-              {showHiddenDialogs
-                ? filteredHiddenDialogs.map((g) => (
-                    <div
-                      key={g.id}
-                      className="group flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-hover"
-                    >
-                      {g.type && CHAT_TYPE_ICONS[g.type] && (
-                        <ChatTypeIcon type={g.type} />
-                      )}
-                      <span className="flex-1 truncate text-text-soft">
-                        {g.name}
-                      </span>
-                      <button
-                        className="shrink-0 rounded p-1 text-text-soft opacity-0 hover:bg-surface-strong hover:text-success focus:opacity-100 group-hover:opacity-100"
-                        onClick={() => onUnhideDialog(g)}
-                        title="Unhide"
+            <>
+              {!showHiddenDialogs && filteredGroups.length > 0 && (
+                <div className="flex items-center gap-1 border-b border-border px-2 py-1">
+                  <button
+                    type="button"
+                    className="rounded px-2 py-0.5 text-xs text-text-soft hover:bg-hover hover:text-text"
+                    onClick={() => bulkSetActive(filteredGroups, true)}
+                    title="Activate all chats in current view"
+                  >
+                    Select all
+                  </button>
+                  <span className="text-xs text-border">·</span>
+                  <button
+                    type="button"
+                    className="rounded px-2 py-0.5 text-xs text-text-soft hover:bg-hover hover:text-text"
+                    onClick={() =>
+                      bulkSetActive(
+                        groups.filter((g) => g.active),
+                        false,
+                      )
+                    }
+                    title="Deactivate all active chats"
+                  >
+                    Deselect all
+                  </button>
+                  <span className="ml-auto text-xs text-text-soft">
+                    {`${filteredGroups.filter((g) => g.active).length} / ${filteredGroups.length}`}
+                  </span>
+                </div>
+              )}
+              <div className="flex-1 overflow-y-auto p-2">
+                {showHiddenDialogs
+                  ? filteredHiddenDialogs.map((g) => (
+                      <div
+                        key={g.id}
+                        className="group flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-hover"
                       >
-                        <svg
-                          className="h-3.5 w-3.5"
-                          viewBox="0 0 16 16"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="1.5"
+                        {g.type && CHAT_TYPE_ICONS[g.type] && (
+                          <ChatTypeIcon type={g.type} />
+                        )}
+                        <span className="flex-1 truncate text-text-soft">
+                          {g.name}
+                        </span>
+                        <button
+                          className="shrink-0 rounded p-1 text-text-soft opacity-0 hover:bg-surface-strong hover:text-success focus:opacity-100 group-hover:opacity-100"
+                          onClick={() => onUnhideDialog(g)}
+                          title="Unhide"
                         >
-                          <path d="M2 8s2.5-4 6-4 6 4 6 4-2.5 4-6 4-6-4-6-4z" />
-                          <circle cx="8" cy="8" r="2" />
-                        </svg>
-                      </button>
-                    </div>
-                  ))
-                : filteredGroups.map((g) => (
-                    <button
-                      type="button"
-                      key={g.id}
-                      className={`group mb-1 flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition-colors ${
-                        g.active
-                          ? 'bg-hover/50 hover:bg-hover'
-                          : 'opacity-50 hover:bg-hover hover:opacity-75'
-                      }`}
-                      onClick={() => toggleActive(g)}
-                      title={
-                        g.active ? 'Click to deactivate' : 'Click to activate'
-                      }
-                    >
-                      {g.type && CHAT_TYPE_ICONS[g.type] && (
-                        <ChatTypeIcon type={g.type} />
-                      )}
-                      {(g.media_count ?? 0) > 0 && (
-                        <span
-                          className="h-1.5 w-1.5 shrink-0 rounded-full bg-success"
-                          title={`${g.media_count} media synced`}
+                          <svg
+                            className="h-3.5 w-3.5"
+                            viewBox="0 0 16 16"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.5"
+                          >
+                            <path d="M2 8s2.5-4 6-4 6 4 6 4-2.5 4-6 4-6-4-6-4z" />
+                            <circle cx="8" cy="8" r="2" />
+                          </svg>
+                        </button>
+                      </div>
+                    ))
+                  : filteredGroups.map((g) => (
+                      <button
+                        type="button"
+                        key={g.id}
+                        className={`group mb-1 flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition-colors ${
+                          g.active
+                            ? 'bg-hover/50 hover:bg-hover'
+                            : 'opacity-50 hover:bg-hover hover:opacity-75'
+                        }`}
+                        onClick={() => toggleActive(g)}
+                        title={
+                          g.active ? 'Click to deactivate' : 'Click to activate'
+                        }
+                      >
+                        {g.type && CHAT_TYPE_ICONS[g.type] && (
+                          <ChatTypeIcon type={g.type} />
+                        )}
+                        {(g.media_count ?? 0) > 0 && (
+                          <span
+                            className="h-1.5 w-1.5 shrink-0 rounded-full bg-success"
+                            title={`${g.media_count} media synced`}
+                          />
+                        )}
+                        <span className="flex-1 truncate text-left">
+                          {g.name}
+                        </span>
+                        {syncStatuses[g.id]?.status === 'syncing' &&
+                          syncStatuses[g.id].total > 0 && (
+                            <span className="ml-auto shrink-0 text-xs text-accent">
+                              {syncStatuses[g.id].progress.toLocaleString()}
+                              {' / '}
+                              {syncStatuses[g.id].total.toLocaleString()}
+                            </span>
+                          )}
+                        {syncStatuses[g.id]?.status !== 'syncing' &&
+                          previewCounts[String(g.id)]?.total != null &&
+                          previewCounts[String(g.id)]!.total > 0 && (
+                            <span className="ml-auto shrink-0 rounded-full bg-surface-strong/60 px-1.5 py-0.5 text-[10px] text-text-soft">
+                              ~
+                              {previewCounts[
+                                String(g.id)
+                              ]!.total.toLocaleString()}{' '}
+                              new
+                            </span>
+                          )}
+                        <GroupOverflowMenu
+                          group={g}
+                          syncStatus={syncStatuses[g.id]}
+                          onHide={onHideDialog}
+                          onUnsync={onUnsyncGroup}
                         />
-                      )}
-                      <span className="flex-1 truncate text-left">
-                        {g.name}
-                      </span>
-                      {syncStatuses[g.id]?.status === 'syncing' &&
-                        syncStatuses[g.id].total > 0 && (
-                          <span className="ml-auto shrink-0 text-xs text-accent">
-                            {syncStatuses[g.id].progress.toLocaleString()}
-                            {' / '}
-                            {syncStatuses[g.id].total.toLocaleString()}
-                          </span>
-                        )}
-                      {syncStatuses[g.id]?.status !== 'syncing' &&
-                        previewCounts[String(g.id)]?.total != null &&
-                        previewCounts[String(g.id)]!.total > 0 && (
-                          <span className="ml-auto shrink-0 rounded-full bg-surface-strong/60 px-1.5 py-0.5 text-[10px] text-text-soft">
-                            ~
-                            {previewCounts[
-                              String(g.id)
-                            ]!.total.toLocaleString()}{' '}
-                            new
-                          </span>
-                        )}
-                      <GroupOverflowMenu
-                        group={g}
-                        syncStatus={syncStatuses[g.id]}
-                        onHide={onHideDialog}
-                        onUnsync={onUnsyncGroup}
-                      />
-                    </button>
-                  ))}
-            </div>
+                      </button>
+                    ))}
+              </div>
+            </>
           )}
           {(viewMode === 'normal' ||
             (viewMode === 'people' && search.person != null)) && (
