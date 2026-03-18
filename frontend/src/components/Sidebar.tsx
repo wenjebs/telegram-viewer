@@ -343,6 +343,16 @@ export default function Sidebar({
         : groups
   ).filter(syncMatch)
 
+  const filteredHiddenDialogs = deferredQuery.trim()
+    ? hiddenDialogs.filter(
+        (g) =>
+          (!chatTypeFilter || g.type === chatTypeFilter) &&
+          g.name.toLowerCase().includes(deferredQuery.toLowerCase()),
+      )
+    : chatTypeFilter
+      ? hiddenDialogs.filter((g) => g.type === chatTypeFilter)
+      : hiddenDialogs
+
   return (
     <aside
       className="relative flex h-dvh flex-col border-r border-border bg-surface"
@@ -437,7 +447,7 @@ export default function Sidebar({
           {!chatsCollapsed && (
             <div className="flex-1 overflow-y-auto p-2">
               {showHiddenDialogs
-                ? hiddenDialogs.map((g) => (
+                ? filteredHiddenDialogs.map((g) => (
                     <div
                       key={g.id}
                       className="group flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-hover"
