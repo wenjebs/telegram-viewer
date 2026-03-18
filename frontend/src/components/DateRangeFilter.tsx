@@ -12,7 +12,7 @@ export default function DateRangeFilter({
   dateRange,
   onDateRangeChange,
 }: Props) {
-  const [collapsed, setCollapsed] = useState(true)
+  const [collapsed, setCollapsed] = useState(false)
 
   return (
     <div className="border-t border-border p-3">
@@ -33,7 +33,7 @@ export default function DateRangeFilter({
         </button>
         {dateRange && (
           <button
-            className="text-xs text-sky-400 hover:text-sky-300"
+            className="text-xs text-accent hover:text-accent-hover"
             onClick={() => onDateRangeChange(undefined)}
           >
             Clear
@@ -58,7 +58,7 @@ export default function DateRangeFilter({
                 '--rdp-day-width': '34px',
                 '--rdp-day_button-height': '34px',
                 '--rdp-day_button-width': '34px',
-                '--rdp-today-color': '#38bdf8',
+                '--rdp-today-color': 'var(--th-accent)',
                 '--rdp-chevron-disabled-opacity': '0.3',
                 '--rdp-selected-font': 'bold 12px sans-serif',
                 '--rdp-outside-opacity': '0.3',

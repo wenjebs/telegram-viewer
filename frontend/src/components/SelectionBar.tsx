@@ -10,7 +10,7 @@ import { useZipDownload } from '#/hooks/useZipDownload'
 
 interface Props {
   selectedCount: number
-  onSelectAll: () => void
+  onSelectAll: () => Promise<void> | void
   onDeselectAll: () => void
   onDownload: () => void
   onCancel: () => void
@@ -35,6 +35,7 @@ export default function SelectionBar({
   onFavorite,
   onUnfavorite,
 }: Props) {
+  const [selectingAll, setSelectingAll] = useState(false)
   const [unhiding, setUnhiding] = useState(false)
   const [hiding, setHiding] = useState(false)
   const [favoriting, setFavoriting] = useState(false)
@@ -45,6 +46,16 @@ export default function SelectionBar({
   })
 
   // #region Actions
+  const handleSelectAll = async () => {
+    if (selectingAll) return
+    setSelectingAll(true)
+    try {
+      await onSelectAll()
+    } finally {
+      setSelectingAll(false)
+    }
+  }
+
   const handleDownload = () => {
     if (selectedCount === 0 || preparing) return
     startDownload([...selectedIds])
@@ -146,14 +157,15 @@ export default function SelectionBar({
         </span>
         <div className="h-4 w-px bg-border" />
         <button
-          className="text-sm text-sky-400 hover:text-sky-300"
-          onClick={onSelectAll}
+          className="text-sm text-accent hover:text-accent-hover disabled:opacity-50"
+          onClick={handleSelectAll}
+          disabled={selectingAll}
         >
-          Select all
+          {selectingAll ? 'Selecting...' : 'Select all'}
         </button>
         {selectedCount > 0 && (
           <button
-            className="text-sm text-sky-400 hover:text-sky-300"
+            className="text-sm text-accent hover:text-accent-hover"
             onClick={onDeselectAll}
           >
             Deselect
@@ -161,7 +173,7 @@ export default function SelectionBar({
         )}
         {viewMode === 'hidden' ? (
           <button
-            className="rounded-lg bg-emerald-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+            className="rounded-lg bg-success px-4 py-1.5 text-sm font-semibold text-white hover:bg-success/80 disabled:opacity-50"
             onClick={handleUnhide}
             disabled={selectedCount === 0 || unhiding}
           >
@@ -185,7 +197,7 @@ export default function SelectionBar({
               </button>
             ) : (
               <button
-                className="rounded-lg bg-red-600/80 px-4 py-1.5 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-50"
+                className="rounded-lg bg-danger/80 px-4 py-1.5 text-sm font-semibold text-white hover:bg-danger disabled:opacity-50"
                 onClick={handleFavorite}
                 disabled={selectedCount === 0 || favoriting}
               >
@@ -212,32 +224,43 @@ export default function SelectionBar({
               )}
             </button>
             <button
-              className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
+              className="relative overflow-hidden rounded-lg bg-accent px-4 py-1.5 text-sm font-semibold text-white hover:bg-accent-hover disabled:opacity-50"
               onClick={handleDownload}
               disabled={selectedCount === 0 || preparing}
             >
               {preparing ? (
-                <span className="flex items-center gap-2">
-                  <svg
-                    className="h-3.5 w-3.5 animate-spin"
-                    viewBox="0 0 16 16"
-                    fill="none"
-                  >
-                    <circle
-                      cx="8"
-                      cy="8"
-                      r="6"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeDasharray="28"
-                      strokeDashoffset="8"
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                  {zipStatus?.status === 'zipping'
-                    ? 'Building zip...'
-                    : `${zipStatus?.files_ready ?? 0}/${zipStatus?.files_total ?? '?'}...`}
-                </span>
+                <>
+                  <span className="relative z-10 flex items-center gap-2">
+                    <svg
+                      className="h-3.5 w-3.5 animate-spin"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                    >
+                      <circle
+                        cx="8"
+                        cy="8"
+                        r="6"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeDasharray="28"
+                        strokeDashoffset="8"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                    {zipStatus?.status === 'zipping'
+                      ? 'Building zip...'
+                      : `Downloading ${zipStatus?.files_ready ?? 0}/${zipStatus?.files_total ?? '?'}`}
+                  </span>
+                  <div
+                    className="absolute inset-0 bg-white/15 transition-[width] duration-300 ease-out"
+                    style={{
+                      width:
+                        zipStatus?.status === 'zipping'
+                          ? '100%'
+                          : `${((zipStatus?.files_ready ?? 0) / (zipStatus?.files_total || 1)) * 100}%`,
+                    }}
+                  />
+                </>
               ) : (
                 '↓ Download'
               )}
@@ -245,10 +268,19 @@ export default function SelectionBar({
           </>
         )}
         <button
-          className="text-sm text-text-soft hover:text-text"
+          className="rounded p-1 text-text-soft hover:text-text"
           onClick={onCancel}
+          aria-label="Exit select mode"
         >
-          ✕
+          <svg
+            className="h-4 w-4"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <path d="M4 4l8 8M12 4l-8 8" />
+          </svg>
         </button>
       </div>
     </div>

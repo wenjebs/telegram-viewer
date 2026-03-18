@@ -63,7 +63,7 @@ describe('useZipDownload', () => {
       return el
     })
 
-    let callCount = 0
+    let _callCount = 0
     globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
       const url =
         typeof input === 'string'
@@ -78,7 +78,7 @@ describe('useZipDownload', () => {
         })
       }
       if (url.includes('zip-status')) {
-        callCount++
+        _callCount++
         return new Response(
           JSON.stringify({
             status: 'done',

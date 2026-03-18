@@ -66,9 +66,9 @@ export default function AuthFlow({ onAuthenticated }: Props) {
   }
 
   const inputCls =
-    'w-full rounded-md border border-neutral-700 bg-neutral-800 px-3 py-2 text-neutral-200 placeholder:text-neutral-500 focus:border-sky-500 focus:outline-none'
+    'w-full rounded-md border border-border bg-input px-3 py-2 text-text placeholder:text-text-soft focus:border-accent focus:outline-none'
   const btnCls =
-    'w-full rounded-md bg-sky-600 px-4 py-2 font-medium text-white hover:bg-sky-700 disabled:opacity-50'
+    'w-full rounded-md bg-accent px-4 py-2 font-medium text-white hover:bg-accent-hover disabled:opacity-50'
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center p-8">
@@ -98,7 +98,7 @@ export default function AuthFlow({ onAuthenticated }: Props) {
           onSubmit={handleVerifyCode}
           className="flex w-full max-w-xs flex-col gap-4"
         >
-          <p className="text-sm text-neutral-400">
+          <p className="text-sm text-text-soft">
             Enter the code sent to {phone}
           </p>
           <input
@@ -121,7 +121,7 @@ export default function AuthFlow({ onAuthenticated }: Props) {
           onSubmit={handlePassword}
           className="flex w-full max-w-xs flex-col gap-4"
         >
-          <p className="text-sm text-neutral-400">Enter your 2FA password</p>
+          <p className="text-sm text-text-soft">Enter your 2FA password</p>
           <input
             type="password"
             placeholder="2FA Password"
@@ -137,7 +137,7 @@ export default function AuthFlow({ onAuthenticated }: Props) {
         </form>
       )}
 
-      {error && <p className="mt-4 text-sm text-red-400">{error}</p>}
+      {error && <p className="mt-4 text-sm text-danger">{error}</p>}
     </div>
   )
 }

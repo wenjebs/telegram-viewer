@@ -7,12 +7,12 @@ vi.mock('react-day-picker', () => ({
 }))
 
 describe('DateRangeFilter', () => {
-  it('starts collapsed', () => {
+  it('starts expanded', () => {
     render(
       <DateRangeFilter dateRange={undefined} onDateRangeChange={vi.fn()} />,
     )
     expect(screen.getByText('Date Range')).toBeTruthy()
-    expect(screen.queryByTestId('day-picker')).toBeNull()
+    expect(screen.queryByTestId('day-picker')).toBeTruthy()
   })
 
   it('shows Clear when dateRange is set', () => {

@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
@@ -23,6 +23,7 @@ from database import (
     merge_persons_batch,
     remove_face_from_person,
     get_person_media_page,
+    get_person_media_ids,
 )
 from deps import get_db, get_tg, get_background_tasks
 from face_scanner import scan_faces
@@ -255,6 +256,8 @@ async def person_media(
     db: aiosqlite.Connection = Depends(get_db),
     cursor: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
+    sort: Literal["asc", "desc"] = Query("desc"),
+    faces: Literal["none", "solo", "group"] | None = Query(None),
 ):
     cursor_id, cursor_value = parse_cursor(cursor)
     items = await get_person_media_page(
@@ -263,8 +266,21 @@ async def person_media(
         cursor_id=cursor_id,
         cursor_value=cursor_value,
         limit=limit,
+        sort=sort,
+        faces=faces,
     )
     return build_media_response(items, limit, cursor_column="date")
+
+
+@router.get("/persons/{person_id}/media/ids")
+async def person_media_ids(
+    person_id: int,
+    db: aiosqlite.Connection = Depends(get_db),
+    sort: Literal["asc", "desc"] = Query("desc"),
+    faces: Literal["none", "solo", "group"] | None = Query(None),
+):
+    ids = await get_person_media_ids(db, person_id, faces=faces, sort=sort)
+    return {"ids": ids}
 
 
 @router.get("/{face_id}/crop")

@@ -4,6 +4,8 @@ import type { MediaItem, SyncStatus } from '#/api/schemas'
 import { extractDateKey } from '#/utils/format'
 import MediaCard from './MediaCard'
 import DateHeader from './DateHeader'
+import { EmptyState } from '#/components/EmptyState'
+import SkeletonGroup from './SkeletonGroup'
 
 interface Rect {
   x: number
@@ -91,6 +93,12 @@ export default function MediaGrid({
   const SCROLL_PADDING = 16 // p-4
   const MIN_COL = 160
 
+  const skeletonCols = useMemo(() => {
+    if (containerWidth === 0) return 4
+    const gridWidth = containerWidth - SCROLL_PADDING * 2 - ROW_PADDING * 2
+    return Math.max(1, Math.floor((gridWidth + GAP) / (MIN_COL + GAP)))
+  }, [containerWidth])
+
   const virtualizer = useVirtualizer({
     count: grouped.length,
     getScrollElement: () => scrollRef.current,
@@ -140,6 +148,17 @@ export default function MediaGrid({
     }
   }, [lastIndex, grouped.length, hasMore, loading, onLoadMore])
 
+  // Initial load skeleton
+  if (items.length === 0 && loading) {
+    return (
+      <div className="flex-1 space-y-4 overflow-y-auto p-4" aria-busy="true">
+        <SkeletonGroup columns={4} rows={2} />
+        <SkeletonGroup columns={4} rows={3} />
+        <SkeletonGroup columns={4} rows={2} />
+      </div>
+    )
+  }
+
   // #region Empty / syncing states
   if (items.length === 0 && !loading) {
     if (syncing) {
@@ -164,7 +183,7 @@ export default function MediaGrid({
           </span>
           <div className="h-2 w-64 overflow-hidden rounded-full bg-surface-strong">
             <div
-              className={`h-full rounded-full bg-sky-600 transition-all duration-300${totals.total === 0 ? ' animate-pulse' : ''}`}
+              className={`h-full rounded-full bg-accent transition-all duration-300${totals.total === 0 ? ' animate-pulse' : ''}`}
               style={{
                 width: `${totals.total > 0 ? pct : 100}%`,
               }}
@@ -174,11 +193,7 @@ export default function MediaGrid({
       )
     }
 
-    return (
-      <div className="flex flex-1 items-center justify-center p-8 text-text-soft">
-        No media found. Select some groups and sync to get started.
-      </div>
-    )
+    return <EmptyState />
   }
   // #endregion
 
@@ -227,9 +242,12 @@ export default function MediaGrid({
               >
                 {selectMode && (
                   <div
+                    role="checkbox"
+                    aria-checked={allSelected}
+                    aria-label="Select all items in this date group"
                     className={`flex h-4 w-4 items-center justify-center rounded border transition-colors${
                       allSelected
-                        ? ' border-blue-500 bg-blue-500 text-white'
+                        ? ' border-accent bg-accent text-white'
                         : ' border-text-soft bg-transparent'
                     }`}
                   >
@@ -275,18 +293,14 @@ export default function MediaGrid({
           )
         })}
       </div>
-      {hasMore && (
-        <button
-          className="mx-auto mt-6 block rounded-md border border-border px-6 py-2 text-sm text-text hover:bg-hover disabled:opacity-50"
-          onClick={onLoadMore}
-          disabled={loading}
-        >
-          {loading ? 'Loading...' : 'Load more'}
-        </button>
+      {hasMore && loading && (
+        <div className="mt-4">
+          <SkeletonGroup columns={skeletonCols} rows={2} />
+        </div>
       )}
       {selectionRect && (
         <div
-          className="pointer-events-none fixed z-40 border border-blue-400 bg-blue-400/15"
+          className="pointer-events-none fixed z-40 border border-accent bg-accent/15"
           style={{
             left: selectionRect.x,
             top: selectionRect.y,

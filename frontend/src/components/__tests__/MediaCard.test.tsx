@@ -67,7 +67,7 @@ describe('MediaCard', () => {
     )
     const wrapper = container.firstElementChild
     expect(wrapper?.className).toContain('ring-2')
-    expect(wrapper?.className).toContain('ring-blue-500')
+    expect(wrapper?.className).toContain('ring-accent')
   })
 
   it('applies opacity when in select mode but not selected', () => {

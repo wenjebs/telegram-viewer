@@ -8,57 +8,37 @@ import {
   useState,
 } from 'react'
 import { useHotkeys } from 'react-hotkeys-hook'
+import { useQuery } from '@tanstack/react-query'
+import { Megaphone, Settings, User, Users } from 'lucide-react'
 import Fuse from 'fuse.js'
 import type { DateRange } from 'react-day-picker'
-import type { Group, PreviewCounts, SyncStatus } from '#/api/schemas'
+import type { Group, SyncStatus } from '#/api/schemas'
+import {
+  getHiddenDialogs,
+  getHiddenDialogCount,
+  getMediaCount,
+} from '#/api/client'
+import { useSearchParams } from '#/hooks/useSearchParam'
+import { useAppStore } from '#/stores/appStore'
+import { useGroups } from '#/hooks/useGroups'
+import { formatDateParam } from '#/utils/format'
 
-const DateRangeFilter = lazy(() => import('./DateRangeFilter'))
+import DateRangeFilter from './DateRangeFilter'
 import GroupOverflowMenu from './GroupOverflowMenu'
-import { ThemeToggle } from '#/components/ThemeToggle'
+import { SegmentedControl } from './SegmentedControl'
+
+const SettingsPanel = lazy(() => import('./SettingsPanel'))
 
 interface Props {
-  width: number
-  onWidthChange: (width: number) => void
-  groups: Group[]
-  onToggleGroup: (group: Group) => void
-  mediaTypeFilter: string | null
-  onMediaTypeFilter: (type: string | null) => void
-  chatTypeFilter: string | null
-  onChatTypeFilter: (type: string | null) => void
-  syncFilter: string | null
-  onSyncFilter: (value: string | null) => void
-  facesFilter?: string | null
-  onFacesFilter?: (value: string | null) => void
-  dateRange: DateRange | undefined
-  onDateRangeChange: (range: DateRange | undefined) => void
   onSync: () => void
   onClear: () => void
   syncing: boolean
   syncStatuses: Record<number, SyncStatus>
-  selectMode?: boolean
-  onEnterSelectMode?: () => void
-  viewMode?: 'normal' | 'hidden' | 'favorites' | 'people'
-  onViewModeChange?: (
-    mode: 'normal' | 'hidden' | 'favorites' | 'people',
-  ) => void
-  personCount?: number
-  faceScanning?: boolean
-  faceScanScanned?: number
-  faceScanTotal?: number
-  onStartFaceScan?: () => void
-  hiddenCount?: number
-  favoritesCount?: number
-  showHiddenDialogs?: boolean
-  onToggleHiddenDialogs?: () => void
-  hiddenDialogs?: Group[]
-  onHideDialog?: (group: Group) => void
-  onUnhideDialog?: (group: Group) => void
-  onUnsyncGroup?: (group: Group) => void
-  hiddenDialogCount?: number
-  previewCounts?: PreviewCounts
-  totalCount?: number
-  initialSearchQuery?: string
-  onSearchQueryChange?: (query: string) => void
+  onHideDialog: (group: Group) => void
+  onUnhideDialog: (group: Group) => void
+  onUnsyncGroup: (group: Group) => void
+  personCount: number
+  viewMode: string
 }
 
 const FACES_FILTER_OPTIONS: { label: string; value: string | null }[] = [
@@ -87,59 +67,154 @@ const SYNC_FILTER_OPTIONS: { label: string; value: string | null }[] = [
   { label: 'Unsynced', value: 'unsynced' },
 ]
 
-const CHAT_TYPE_ICONS: Record<string, string> = {
-  dm: '\u{1F464}',
-  group: '\u{1F465}',
-  channel: '\u{1F4E2}',
+const CHAT_TYPE_ICONS: Record<string, typeof User> = {
+  dm: User,
+  group: Users,
+  channel: Megaphone,
+}
+
+function ChatTypeIcon({ type }: { type: string }) {
+  const Icon = CHAT_TYPE_ICONS[type]
+  if (!Icon) return null
+  return <Icon className="size-3.5 shrink-0 text-text-soft" />
 }
 
 const MIN_WIDTH = 200
 const MAX_WIDTH = 500
 
-export default function Sidebar({
-  width,
-  onWidthChange,
-  groups,
-  onToggleGroup,
-  mediaTypeFilter,
-  onMediaTypeFilter,
-  chatTypeFilter,
-  onChatTypeFilter,
-  syncFilter,
-  onSyncFilter,
-  facesFilter,
-  onFacesFilter,
+function FilterDisclosure({
   dateRange,
   onDateRangeChange,
+  mediaTypeFilter,
+  onMediaTypeFilter,
+  facesFilter,
+  onFacesFilter,
+  personCount,
+}: {
+  dateRange: DateRange | undefined
+  onDateRangeChange: (range: DateRange | undefined) => void
+  mediaTypeFilter: string | null
+  onMediaTypeFilter: (type: string | null) => void
+  facesFilter: string | null
+  onFacesFilter: (value: string | null) => void
+  personCount: number
+}) {
+  const [expanded, setExpanded] = useState(false)
+  useHotkeys('slash', () => setExpanded((e) => !e))
+
+  const hasActiveFilters =
+    mediaTypeFilter != null || facesFilter != null || dateRange != null
+
+  return (
+    <div className="border-t border-border">
+      <button
+        className="flex w-full items-center gap-1.5 px-3 py-2 text-xs font-semibold text-text-soft hover:text-text"
+        onClick={() => setExpanded((e) => !e)}
+        aria-expanded={expanded}
+        aria-label="Filters"
+      >
+        <svg
+          className={`h-3 w-3 transition-transform ${expanded ? '' : '-rotate-90'}`}
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+        >
+          <path d="M4 6l4 4 4-4" />
+        </svg>
+        Filters
+        {hasActiveFilters && (
+          <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+        )}
+      </button>
+      <div
+        className="grid transition-[grid-template-rows] duration-250 ease-in-out"
+        style={{ gridTemplateRows: expanded ? '1fr' : '0fr' }}
+      >
+        <div className="min-h-0 overflow-hidden">
+          <DateRangeFilter
+            dateRange={dateRange}
+            onDateRangeChange={onDateRangeChange}
+          />
+          <div className="border-t border-border p-3">
+            <SegmentedControl
+              options={MEDIA_TYPE_OPTIONS}
+              value={mediaTypeFilter}
+              onChange={onMediaTypeFilter}
+              label="Media type filter"
+            />
+          </div>
+          {personCount > 0 && (
+            <div className="border-t border-border p-3">
+              <SegmentedControl
+                options={FACES_FILTER_OPTIONS}
+                value={facesFilter}
+                onChange={onFacesFilter}
+                label="Face count filter"
+              />
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default function Sidebar({
   onSync,
   onClear,
   syncing,
   syncStatuses,
-  selectMode,
-  onEnterSelectMode,
-  viewMode = 'normal',
-  onViewModeChange,
-  hiddenCount = 0,
-  favoritesCount = 0,
-  showHiddenDialogs,
-  onToggleHiddenDialogs,
-  hiddenDialogs = [],
   onHideDialog,
   onUnhideDialog,
   onUnsyncGroup,
-  hiddenDialogCount = 0,
   personCount = 0,
-  faceScanning,
-  faceScanScanned,
-  faceScanTotal,
-  onStartFaceScan,
-  totalCount = 0,
-  previewCounts = {},
-  initialSearchQuery = '',
-  onSearchQueryChange,
+  viewMode = 'normal',
 }: Props) {
-  const [searchQuery, setSearchQueryLocal] = useState(initialSearchQuery)
-  const deferredQuery = useDeferredValue(searchQuery)
+  // Read state from hooks instead of props
+  const { search, setSearch } = useSearchParams()
+  const width = useAppStore((s) => s.sidebarWidth)
+  const setSidebarWidth = useAppStore((s) => s.setSidebarWidth)
+
+  const { groups, toggleActive, previewCounts } = useGroups()
+
+  const showHiddenDialogs = search.hiddenDialogs ?? false
+  const chatTypeFilter = search.chat ?? null
+  const syncFilter = search.sync ?? null
+  const mediaTypeFilter = search.media ?? null
+  const facesFilter = search.faces ?? null
+  const dateFrom = search.from
+  const dateTo = search.to
+  const dateRange: DateRange | undefined = useMemo(
+    () =>
+      dateFrom || dateTo
+        ? {
+            from: dateFrom ? new Date(dateFrom) : undefined,
+            to: dateTo ? new Date(dateTo) : undefined,
+          }
+        : undefined,
+    [dateFrom, dateTo],
+  )
+
+  // Count queries (TanStack Query deduplicates with useHomeData)
+  const { data: totalCount = 0 } = useQuery({
+    queryKey: ['counts', 'total'],
+    queryFn: () => getMediaCount().then((r) => r.count),
+  })
+  const { data: hiddenDialogCount = 0 } = useQuery({
+    queryKey: ['counts', 'hiddenDialogs'],
+    queryFn: () => getHiddenDialogCount().then((r) => r.count),
+  })
+  const { data: hiddenDialogs = [] } = useQuery({
+    queryKey: ['hiddenDialogs'],
+    queryFn: getHiddenDialogs,
+    enabled: showHiddenDialogs,
+  })
+
+  // Local UI state
+  const [showSettings, setShowSettings] = useState(false)
+  const [localSearchQuery, setLocalSearchQuery] = useState(search.q ?? '')
+  const deferredQuery = useDeferredValue(localSearchQuery)
   const [chatsCollapsed, setChatsCollapsed] = useState(false)
   useHotkeys('c', () => setChatsCollapsed((p) => !p))
   const dragging = useRef(false)
@@ -147,15 +222,67 @@ export default function Sidebar({
     undefined,
   )
 
-  const setSearchQuery = useCallback(
+  // URL state setters
+  const setChatTypeFilter = useCallback(
+    (v: string | null) =>
+      setSearch(
+        { chat: (v as 'dm' | 'group' | 'channel') ?? undefined },
+        { replace: true },
+      ),
+    [setSearch],
+  )
+  const setSyncFilter = useCallback(
+    (v: string | null) =>
+      setSearch(
+        { sync: (v as 'synced' | 'unsynced') ?? undefined },
+        { replace: true },
+      ),
+    [setSearch],
+  )
+  const setMediaTypeFilter = useCallback(
+    (v: string | null) =>
+      setSearch(
+        { media: (v as 'photo' | 'video') ?? undefined },
+        { replace: true },
+      ),
+    [setSearch],
+  )
+  const setFacesFilter = useCallback(
+    (v: string | null) =>
+      setSearch(
+        { faces: (v as 'none' | 'solo' | 'group') ?? undefined },
+        { replace: true },
+      ),
+    [setSearch],
+  )
+  const setDateRange = useCallback(
+    (dr: DateRange | undefined) =>
+      setSearch(
+        {
+          from: dr?.from ? formatDateParam(dr.from) : undefined,
+          to: dr?.to ? formatDateParam(dr.to) : undefined,
+        },
+        { replace: true },
+      ),
+    [setSearch],
+  )
+  const handleToggleHiddenDialogs = useCallback(() => {
+    setSearch(
+      { hiddenDialogs: showHiddenDialogs ? undefined : true },
+      { replace: true },
+    )
+  }, [setSearch, showHiddenDialogs])
+
+  const handleSearchQueryChange = useCallback(
     (query: string) => {
-      setSearchQueryLocal(query)
-      if (onSearchQueryChange) {
-        clearTimeout(debounceRef.current)
-        debounceRef.current = setTimeout(() => onSearchQueryChange(query), 300)
-      }
+      setLocalSearchQuery(query)
+      clearTimeout(debounceRef.current)
+      debounceRef.current = setTimeout(
+        () => setSearch({ q: query || undefined }, { replace: true }),
+        300,
+      )
     },
-    [onSearchQueryChange],
+    [setSearch],
   )
 
   const onMouseDown = useCallback(
@@ -170,7 +297,7 @@ export default function Sidebar({
           MAX_WIDTH,
           Math.max(MIN_WIDTH, startWidth + ev.clientX - startX),
         )
-        onWidthChange(newWidth)
+        setSidebarWidth(newWidth)
       }
 
       const onMouseUp = () => {
@@ -186,7 +313,7 @@ export default function Sidebar({
       document.addEventListener('mousemove', onMouseMove)
       document.addEventListener('mouseup', onMouseUp)
     },
-    [width, onWidthChange],
+    [width, setSidebarWidth],
   )
   const fuse = useMemo(
     () =>
@@ -218,355 +345,229 @@ export default function Sidebar({
 
   return (
     <aside
-      className="relative flex h-screen flex-col border-r border-border bg-surface"
+      className="relative flex h-dvh flex-col border-r border-border bg-surface"
       style={{ width, minWidth: MIN_WIDTH, maxWidth: MAX_WIDTH }}
     >
-      <div className="flex items-center border-b border-border">
-        <button
-          className="flex flex-1 items-center justify-between p-4 text-sm font-semibold hover:bg-hover/50"
-          onClick={() => setChatsCollapsed((p) => !p)}
-        >
-          {showHiddenDialogs ? 'Hidden Chats' : 'Chats'}
-          <svg
-            className={`h-4 w-4 text-text-soft transition-transform${chatsCollapsed ? ' -rotate-90' : ''}`}
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <path d="M4 6l4 4 4-4" />
-          </svg>
-        </button>
-        {onToggleHiddenDialogs && (
-          <button
-            className={`mr-2 rounded p-1.5 text-xs ${
-              showHiddenDialogs
-                ? 'bg-amber-600/20 text-amber-400'
-                : 'text-text-soft hover:bg-hover hover:text-text'
-            }`}
-            onClick={onToggleHiddenDialogs}
-            title={
-              showHiddenDialogs ? 'Show visible chats' : 'Show hidden chats'
-            }
-          >
-            <svg
-              className="h-4 w-4"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-            >
-              <path d="M2 8s2.5-4 6-4 6 4 6 4-2.5 4-6 4-6-4-6-4z" />
-              <circle cx="8" cy="8" r="2" />
-              <line x1="2" y1="14" x2="14" y2="2" />
-            </svg>
-            {hiddenDialogCount > 0 && (
-              <span className="ml-1">{hiddenDialogCount}</span>
-            )}
-          </button>
-        )}
-      </div>
-      <div
-        className="grid transition-[grid-template-rows] duration-250 ease-in-out"
-        style={{
-          gridTemplateRows: chatsCollapsed ? '0fr' : '1fr',
-        }}
-      >
-        <div className="min-h-0 overflow-hidden">
-          <div className="flex gap-1 border-b border-border p-2">
-            {CHAT_TYPE_OPTIONS.map((opt) => (
-              <button
-                key={opt.label}
-                className={`flex-1 rounded px-2 py-1 text-xs ${chatTypeFilter === opt.value ? 'bg-accent text-white' : 'border border-border text-text'}`}
-                onClick={() => onChatTypeFilter(opt.value)}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-          <div className="flex gap-1 border-b border-border p-2">
-            {SYNC_FILTER_OPTIONS.map((opt) => (
-              <button
-                key={opt.label}
-                className={`flex-1 rounded px-2 py-1 text-xs ${syncFilter === opt.value ? 'bg-accent text-white' : 'border border-border text-text'}`}
-                onClick={() => onSyncFilter(opt.value)}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-          <div className="border-b border-border p-2">
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search chats..."
-              className="w-full rounded bg-surface-alt px-3 py-1.5 text-sm text-text placeholder-text-soft outline-none focus:ring-1 focus:ring-ring"
-            />
-          </div>
-        </div>
-      </div>
-      {!chatsCollapsed && (
-        <div className="flex-1 overflow-y-auto p-2">
-          {showHiddenDialogs
-            ? hiddenDialogs.map((g) => (
-                <div
-                  key={g.id}
-                  className="group flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-hover"
-                >
-                  {g.type && CHAT_TYPE_ICONS[g.type] && (
-                    <span className="text-xs">{CHAT_TYPE_ICONS[g.type]}</span>
-                  )}
-                  <span className="flex-1 truncate text-text-soft">
-                    {g.name}
-                  </span>
-                  {onUnhideDialog && (
-                    <button
-                      className="shrink-0 rounded p-1 text-text-soft opacity-0 hover:bg-surface-strong hover:text-green-400 group-hover:opacity-100"
-                      onClick={() => onUnhideDialog(g)}
-                      title="Unhide"
-                    >
-                      <svg
-                        className="h-3.5 w-3.5"
-                        viewBox="0 0 16 16"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                      >
-                        <path d="M2 8s2.5-4 6-4 6 4 6 4-2.5 4-6 4-6-4-6-4z" />
-                        <circle cx="8" cy="8" r="2" />
-                      </svg>
-                    </button>
-                  )}
-                </div>
-              ))
-            : filteredGroups.map((g) => (
-                <div
-                  key={g.id}
-                  className={`group mb-1 flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${
-                    g.active
-                      ? 'bg-hover/50 hover:bg-hover'
-                      : 'opacity-50 hover:bg-hover hover:opacity-75'
-                  }`}
-                  onClick={() => onToggleGroup(g)}
-                  title={g.active ? 'Click to deactivate' : 'Click to activate'}
-                >
-                  {g.type && CHAT_TYPE_ICONS[g.type] && (
-                    <span className="text-xs">{CHAT_TYPE_ICONS[g.type]}</span>
-                  )}
-                  {(g.media_count ?? 0) > 0 && (
-                    <span
-                      className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500"
-                      title={`${g.media_count} media synced`}
-                    />
-                  )}
-                  <span className="flex-1 truncate text-left">{g.name}</span>
-                  {syncStatuses[g.id]?.status === 'syncing' &&
-                    syncStatuses[g.id].total > 0 && (
-                      <span className="ml-auto shrink-0 text-xs text-sky-400">
-                        {syncStatuses[g.id].progress.toLocaleString()}
-                        {' / '}
-                        {syncStatuses[g.id].total.toLocaleString()}
-                      </span>
-                    )}
-                  {syncStatuses[g.id]?.status !== 'syncing' &&
-                    previewCounts[String(g.id)]?.total != null &&
-                    previewCounts[String(g.id)]!.total > 0 && (
-                      <span className="ml-auto shrink-0 rounded-full bg-surface-strong/60 px-1.5 py-0.5 text-[10px] text-text-soft">
-                        ~{previewCounts[String(g.id)]!.total.toLocaleString()}{' '}
-                        new
-                      </span>
-                    )}
-                  {onHideDialog && onUnsyncGroup && (
-                    <GroupOverflowMenu
-                      group={g}
-                      syncStatus={syncStatuses[g.id]}
-                      onHide={onHideDialog}
-                      onUnsync={onUnsyncGroup}
-                    />
-                  )}
-                </div>
-              ))}
-        </div>
-      )}
-      {onViewModeChange && (
-        <div className="border-t border-border p-2">
-          <button
-            className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm ${
-              viewMode === 'hidden'
-                ? 'bg-surface-alt text-text'
-                : 'text-text-soft hover:bg-hover hover:text-text'
-            }`}
-            onClick={() =>
-              onViewModeChange(viewMode === 'hidden' ? 'normal' : 'hidden')
-            }
-          >
-            <svg
-              className="h-4 w-4"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-            >
-              <path d="M2 8s2.5-4 6-4 6 4 6 4-2.5 4-6 4-6-4-6-4z" />
-              <circle cx="8" cy="8" r="2" />
-              {viewMode !== 'hidden' && <line x1="2" y1="14" x2="14" y2="2" />}
-            </svg>
-            <span className="flex-1 text-left">Hidden</span>
-            {hiddenCount > 0 && (
-              <span className="rounded-full bg-surface-strong px-1.5 py-0.5 text-xs text-text">
-                {hiddenCount}
-              </span>
-            )}
-          </button>
-          <button
-            className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm ${
-              viewMode === 'favorites'
-                ? 'bg-surface-alt text-text'
-                : 'text-text-soft hover:bg-hover hover:text-text'
-            }`}
-            onClick={() =>
-              onViewModeChange(
-                viewMode === 'favorites' ? 'normal' : 'favorites',
-              )
-            }
-          >
-            <span className="text-sm">
-              {viewMode === 'favorites' ? '♥' : '♡'}
-            </span>
-            <span className="flex-1 text-left">Favorites</span>
-            {favoritesCount > 0 && (
-              <span className="rounded-full bg-surface-strong px-1.5 py-0.5 text-xs text-text">
-                {favoritesCount}
-              </span>
-            )}
-          </button>
-          <button
-            className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm ${
-              viewMode === 'people'
-                ? 'bg-surface-alt text-text'
-                : 'text-text-soft hover:bg-hover hover:text-text'
-            }`}
-            onClick={() =>
-              onViewModeChange?.(viewMode === 'people' ? 'normal' : 'people')
-            }
-          >
-            <svg
-              className="h-4 w-4"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-            >
-              <circle cx="5.5" cy="5" r="2.5" />
-              <circle cx="10.5" cy="5" r="2.5" />
-              <path d="M1 14c0-2.2 1.8-4 4-4h.5M15 14c0-2.2-1.8-4-4-4h-.5" />
-            </svg>
-            <span className="flex-1 text-left">People</span>
-            {personCount > 0 && (
-              <span className="rounded-full bg-surface-strong px-1.5 py-0.5 text-xs text-text">
-                {personCount}
-              </span>
-            )}
-          </button>
-        </div>
-      )}
-      {viewMode === 'normal' && (
+      {showSettings ? (
+        <Suspense fallback={null}>
+          <SettingsPanel onClose={() => setShowSettings(false)} />
+        </Suspense>
+      ) : (
         <>
-          <DateRangeFilter
-            dateRange={dateRange}
-            onDateRangeChange={onDateRangeChange}
-          />
-          <div className="flex gap-1 border-t border-border p-3">
-            {MEDIA_TYPE_OPTIONS.map((opt) => (
-              <button
-                key={opt.label}
-                className={`flex-1 rounded px-2 py-1 text-xs ${mediaTypeFilter === opt.value ? 'bg-accent text-white' : 'border border-border text-text'}`}
-                onClick={() => onMediaTypeFilter(opt.value)}
+          <div className="flex items-center border-b border-border">
+            <button
+              className="flex flex-1 items-center justify-between p-4 text-sm font-semibold hover:bg-hover/50"
+              onClick={() => setChatsCollapsed((p) => !p)}
+            >
+              {showHiddenDialogs ? 'Hidden Chats' : 'Chats'}
+              <svg
+                className={`h-4 w-4 text-text-soft transition-transform${chatsCollapsed ? ' -rotate-90' : ''}`}
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
               >
-                {opt.label}
-              </button>
-            ))}
+                <path d="M4 6l4 4 4-4" />
+              </svg>
+            </button>
+            <button
+              className={`mr-2 flex items-center justify-center rounded p-1.5 text-xs ${
+                showHiddenDialogs
+                  ? 'bg-warning/20 text-warning'
+                  : 'text-text-soft hover:bg-hover hover:text-text'
+              }`}
+              onClick={handleToggleHiddenDialogs}
+              title={
+                showHiddenDialogs ? 'Show visible chats' : 'Show hidden chats'
+              }
+              aria-label={
+                showHiddenDialogs ? 'Show visible chats' : 'Show hidden chats'
+              }
+            >
+              <svg
+                className="h-4 w-4"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+              >
+                <path d="M2 8s2.5-4 6-4 6 4 6 4-2.5 4-6 4-6-4-6-4z" />
+                <circle cx="8" cy="8" r="2" />
+                <line x1="2" y1="14" x2="14" y2="2" />
+              </svg>
+              {hiddenDialogCount > 0 && (
+                <span className="ml-1">{hiddenDialogCount}</span>
+              )}
+            </button>
           </div>
-          {onFacesFilter && (personCount ?? 0) > 0 && (
-            <div className="flex gap-1 border-t border-border p-3">
-              {FACES_FILTER_OPTIONS.map((opt) => (
-                <button
-                  key={opt.label}
-                  className={`flex-1 rounded px-2 py-1 text-xs ${facesFilter === opt.value ? 'bg-accent text-white' : 'border border-border text-text'}`}
-                  onClick={() => onFacesFilter(opt.value)}
-                >
-                  {opt.label}
-                </button>
-              ))}
+          <div
+            className="grid transition-[grid-template-rows] duration-250 ease-in-out"
+            style={{
+              gridTemplateRows: chatsCollapsed ? '0fr' : '1fr',
+            }}
+          >
+            <div className="min-h-0 overflow-hidden">
+              <div className="border-b border-border p-2">
+                <SegmentedControl
+                  options={CHAT_TYPE_OPTIONS}
+                  value={chatTypeFilter}
+                  onChange={setChatTypeFilter}
+                  label="Chat type filter"
+                />
+              </div>
+              <div className="border-b border-border p-2">
+                <SegmentedControl
+                  options={SYNC_FILTER_OPTIONS}
+                  value={syncFilter}
+                  onChange={setSyncFilter}
+                  label="Sync status filter"
+                />
+              </div>
+              <div className="border-b border-border p-2">
+                <input
+                  type="text"
+                  value={localSearchQuery}
+                  onChange={(e) => handleSearchQueryChange(e.target.value)}
+                  placeholder="Search chats..."
+                  className="w-full rounded bg-surface-alt px-3 py-1.5 text-sm text-text placeholder-text-soft outline-none focus:ring-1 focus:ring-ring"
+                />
+              </div>
+            </div>
+          </div>
+          {!chatsCollapsed && (
+            <div className="flex-1 overflow-y-auto p-2">
+              {showHiddenDialogs
+                ? hiddenDialogs.map((g) => (
+                    <div
+                      key={g.id}
+                      className="group flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-hover"
+                    >
+                      {g.type && CHAT_TYPE_ICONS[g.type] && (
+                        <ChatTypeIcon type={g.type} />
+                      )}
+                      <span className="flex-1 truncate text-text-soft">
+                        {g.name}
+                      </span>
+                      <button
+                        className="shrink-0 rounded p-1 text-text-soft opacity-0 hover:bg-surface-strong hover:text-success focus:opacity-100 group-hover:opacity-100"
+                        onClick={() => onUnhideDialog(g)}
+                        title="Unhide"
+                      >
+                        <svg
+                          className="h-3.5 w-3.5"
+                          viewBox="0 0 16 16"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                        >
+                          <path d="M2 8s2.5-4 6-4 6 4 6 4-2.5 4-6 4-6-4-6-4z" />
+                          <circle cx="8" cy="8" r="2" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))
+                : filteredGroups.map((g) => (
+                    <button
+                      type="button"
+                      key={g.id}
+                      className={`group mb-1 flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition-colors ${
+                        g.active
+                          ? 'bg-hover/50 hover:bg-hover'
+                          : 'opacity-50 hover:bg-hover hover:opacity-75'
+                      }`}
+                      onClick={() => toggleActive(g)}
+                      title={
+                        g.active ? 'Click to deactivate' : 'Click to activate'
+                      }
+                    >
+                      {g.type && CHAT_TYPE_ICONS[g.type] && (
+                        <ChatTypeIcon type={g.type} />
+                      )}
+                      {(g.media_count ?? 0) > 0 && (
+                        <span
+                          className="h-1.5 w-1.5 shrink-0 rounded-full bg-success"
+                          title={`${g.media_count} media synced`}
+                        />
+                      )}
+                      <span className="flex-1 truncate text-left">
+                        {g.name}
+                      </span>
+                      {syncStatuses[g.id]?.status === 'syncing' &&
+                        syncStatuses[g.id].total > 0 && (
+                          <span className="ml-auto shrink-0 text-xs text-accent">
+                            {syncStatuses[g.id].progress.toLocaleString()}
+                            {' / '}
+                            {syncStatuses[g.id].total.toLocaleString()}
+                          </span>
+                        )}
+                      {syncStatuses[g.id]?.status !== 'syncing' &&
+                        previewCounts[String(g.id)]?.total != null &&
+                        previewCounts[String(g.id)]!.total > 0 && (
+                          <span className="ml-auto shrink-0 rounded-full bg-surface-strong/60 px-1.5 py-0.5 text-[10px] text-text-soft">
+                            ~
+                            {previewCounts[
+                              String(g.id)
+                            ]!.total.toLocaleString()}{' '}
+                            new
+                          </span>
+                        )}
+                      <GroupOverflowMenu
+                        group={g}
+                        syncStatus={syncStatuses[g.id]}
+                        onHide={onHideDialog}
+                        onUnsync={onUnsyncGroup}
+                      />
+                    </button>
+                  ))}
             </div>
           )}
+          {(viewMode === 'normal' ||
+            (viewMode === 'people' && search.person != null)) && (
+            <FilterDisclosure
+              dateRange={dateRange}
+              onDateRangeChange={setDateRange}
+              mediaTypeFilter={mediaTypeFilter}
+              onMediaTypeFilter={setMediaTypeFilter}
+              facesFilter={facesFilter}
+              onFacesFilter={setFacesFilter}
+              personCount={personCount}
+            />
+          )}
+          {totalCount > 0 && (
+            <div className="px-3 pt-2 text-center text-xs text-text-soft">
+              {totalCount.toLocaleString()} items synced
+            </div>
+          )}
+          <div className="m-3 flex gap-2">
+            <button
+              className="flex-1 rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50"
+              onClick={onSync}
+              disabled={syncing}
+            >
+              {syncing ? 'Syncing...' : 'Sync'}
+            </button>
+            <button
+              className="rounded-md border border-danger/40 px-3 py-2 text-sm text-danger hover:border-danger hover:bg-danger/10 disabled:opacity-50"
+              onClick={onClear}
+              disabled={syncing}
+            >
+              Clear
+            </button>
+          </div>
+          <div className="flex items-center justify-center border-t border-border py-2">
+            <button
+              type="button"
+              onClick={() => setShowSettings(true)}
+              aria-label="Settings"
+              className="rounded-md p-1.5 text-text-soft transition-colors hover:bg-hover hover:text-text"
+            >
+              <Settings className="size-4" />
+            </button>
+          </div>
         </>
       )}
-      {viewMode === 'people' && onStartFaceScan && (
-        <div className="mx-3 mt-3">
-          <button
-            className="flex w-full items-center justify-center gap-2 rounded bg-accent px-3 py-1.5 text-sm text-white hover:bg-accent-hover disabled:opacity-50"
-            onClick={() => onStartFaceScan()}
-            disabled={faceScanning}
-          >
-            {faceScanning
-              ? `Scanning... ${faceScanScanned ?? 0}/${faceScanTotal ?? 0}`
-              : 'Scan Faces'}
-          </button>
-        </div>
-      )}
-      {totalCount > 0 && (
-        <div className="px-3 pt-2 text-center text-xs text-text-soft">
-          {totalCount.toLocaleString()} items synced
-        </div>
-      )}
-      <div className="m-3 flex gap-2">
-        <button
-          className="flex-1 rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover disabled:opacity-50"
-          onClick={onSync}
-          disabled={syncing}
-        >
-          {syncing ? 'Syncing...' : 'Sync'}
-        </button>
-        <button
-          className="rounded-md border border-border-soft px-3 py-2 text-sm text-text hover:bg-hover disabled:opacity-50"
-          onClick={onClear}
-          disabled={syncing}
-        >
-          Clear
-        </button>
-        {onEnterSelectMode && (
-          <button
-            className={`rounded-md border px-3 py-2 text-sm ${
-              selectMode
-                ? 'border-blue-500 bg-blue-500/20 text-blue-300'
-                : 'border-border-soft text-text hover:bg-hover'
-            } disabled:opacity-50`}
-            onClick={onEnterSelectMode}
-            disabled={syncing || selectMode}
-            title="Select mode"
-          >
-            <svg
-              className="h-4 w-4"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-            >
-              <rect x="1" y="1" width="6" height="6" rx="1" />
-              <rect x="9" y="1" width="6" height="6" rx="1" />
-              <rect x="1" y="9" width="6" height="6" rx="1" />
-              <path d="M11 10l1.5 1.5L15 9" />
-            </svg>
-          </button>
-        )}
-      </div>
-      <div className="flex items-center justify-center border-t border-border py-2">
-        <ThemeToggle />
-      </div>
       <div
-        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-sky-500/40 active:bg-sky-500/60"
+        className="absolute top-0 right-0 bottom-0 w-1 cursor-col-resize hover:bg-accent/40 active:bg-accent/60"
         onMouseDown={onMouseDown}
       />
     </aside>

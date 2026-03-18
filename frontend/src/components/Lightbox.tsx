@@ -75,7 +75,7 @@ export default function Lightbox({
   }
 
   const navBtnCls =
-    'absolute top-1/2 -translate-y-1/2 rounded bg-black/50 px-3 py-4 text-2xl text-white hover:bg-black/70'
+    'absolute top-1/2 -translate-y-1/2 flex h-11 w-11 items-center justify-center rounded-full bg-black/50 text-2xl text-white hover:bg-black/70'
 
   return (
     <dialog
@@ -91,19 +91,28 @@ export default function Lightbox({
         onClick={(e) => e.stopPropagation()}
       >
         <button
-          className="absolute -top-8 right-0 text-xl text-white"
+          className="absolute -top-10 -right-2 p-2 text-xl text-white"
           onClick={onClose}
+          aria-label="Close lightbox"
         >
           &times;
         </button>
 
         {hasPrev && (
-          <button className={`${navBtnCls} -left-14`} onClick={onPrev}>
+          <button
+            className={`${navBtnCls} left-2 sm:-left-14`}
+            onClick={onPrev}
+            aria-label="Previous item"
+          >
             &#8249;
           </button>
         )}
         {hasNext && (
-          <button className={`${navBtnCls} -right-14`} onClick={onNext}>
+          <button
+            className={`${navBtnCls} right-2 sm:-right-14`}
+            onClick={onNext}
+            aria-label="Next item"
+          >
             &#8250;
           </button>
         )}
@@ -111,7 +120,7 @@ export default function Lightbox({
         {/* Status indicators */}
         <div className="absolute top-3 left-3 z-10 flex gap-2">
           {selected && (
-            <div className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-blue-500 bg-blue-500 text-white shadow-lg">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-accent bg-accent text-white shadow-lg">
               <svg
                 className="h-4 w-4"
                 viewBox="0 0 12 12"
@@ -124,7 +133,7 @@ export default function Lightbox({
             </div>
           )}
           {favorited && (
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-red-500/90 text-white shadow-lg">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-danger/90 text-white shadow-lg">
               &#9829;
             </div>
           )}
@@ -146,77 +155,96 @@ export default function Lightbox({
         )}
 
         {/* Media info */}
-        <div className="mt-3 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-text-soft">
-          <span className="rounded bg-surface-alt px-1.5 py-0.5 uppercase">
-            {item.media_type}
-          </span>
-          {item.mime_type && <span>{item.mime_type}</span>}
-          {item.sender_name && (
-            <span>
-              from <span className="text-text">{item.sender_name}</span>
+        <div className="mt-4 space-y-1 text-center">
+          {/* Primary: who, where, when */}
+          <div className="flex flex-wrap items-center justify-center gap-x-1.5 text-sm text-text">
+            {item.sender_name && (
+              <>
+                <span className="font-medium">{item.sender_name}</span>
+                <span className="text-text-soft">in</span>
+              </>
+            )}
+            <span className="font-medium">{item.chat_name}</span>
+            <span className="text-text-soft">&middot;</span>
+            <span className="text-text-soft">{formatDateShort(item.date)}</span>
+          </div>
+          {/* Secondary: type, size, dimensions */}
+          <div className="flex flex-wrap items-center justify-center gap-x-2 text-xs text-text-soft">
+            <span className="rounded bg-surface-alt px-1.5 py-0.5 font-medium uppercase">
+              {item.media_type}
             </span>
-          )}
-          <span>
-            in <span className="text-text">{item.chat_name}</span>
-          </span>
-          <span>{formatDateShort(item.date)}</span>
-          {item.file_size != null && (
-            <span>{formatFileSize(item.file_size)}</span>
-          )}
-          {item.width != null && item.height != null && (
-            <span>
-              {item.width}&times;{item.height}
-            </span>
-          )}
+            {item.mime_type && <span>{item.mime_type}</span>}
+            {item.file_size != null && (
+              <>
+                <span>&middot;</span>
+                <span>{formatFileSize(item.file_size)}</span>
+              </>
+            )}
+            {item.width != null && item.height != null && (
+              <>
+                <span>&middot;</span>
+                <span>
+                  {item.width}&times;{item.height}
+                </span>
+              </>
+            )}
+          </div>
         </div>
 
-        <div className="mt-2 flex items-center justify-center gap-3">
+        {/* Actions */}
+        <div className="mt-4 flex items-center justify-center gap-2">
           <button
-            className="rounded-md border border-border-soft px-6 py-2 text-sm text-text hover:bg-hover"
+            className="rounded-md bg-accent px-5 py-2 text-sm font-medium text-white hover:bg-accent-hover"
             onClick={handleDownload}
           >
             Download
           </button>
           {onToggleSelect && (
             <button
-              className={`rounded-md border px-4 py-2 text-sm ${
+              className={`rounded-md border px-3 py-2 text-sm ${
                 selected
-                  ? 'border-blue-500 bg-blue-500/20 text-blue-300'
-                  : 'border-border-soft text-text hover:bg-hover'
+                  ? 'border-accent bg-accent/20 text-accent'
+                  : 'border-border-soft text-text-soft hover:bg-hover hover:text-text'
               }`}
               onClick={onToggleSelect}
+              aria-label={selected ? 'Deselect (S)' : 'Select (S)'}
+              title={selected ? 'Deselect (S)' : 'Select (S)'}
             >
-              {selected ? 'Selected' : 'Select'}{' '}
-              <span className="text-xs text-text-soft">S</span>
+              {selected ? '✓' : '☐'}
             </button>
           )}
           {onToggleFavorite && (
             <button
-              className={`rounded-md border px-4 py-2 text-sm ${
+              className={`rounded-md border px-3 py-2 text-sm ${
                 favorited
-                  ? 'border-red-500 bg-red-500/20 text-red-300'
-                  : 'border-border-soft text-text hover:bg-hover'
+                  ? 'border-danger bg-danger/20 text-danger'
+                  : 'border-border-soft text-text-soft hover:bg-hover hover:text-text'
               }`}
               onClick={onToggleFavorite}
+              aria-label={favorited ? 'Unfavorite (F)' : 'Favorite (F)'}
+              title={favorited ? 'Unfavorite (F)' : 'Favorite (F)'}
             >
-              {favorited ? '\u2665' : '\u2661'}{' '}
-              <span className="text-xs text-text-soft">F</span>
+              {favorited ? '\u2665' : '\u2661'}
             </button>
           )}
           {onHide && (
             <button
-              className="rounded-md border border-border-soft px-4 py-2 text-sm text-text hover:bg-hover"
+              className="rounded-md border border-border-soft px-3 py-2 text-sm text-text-soft hover:bg-hover hover:text-text"
               onClick={onHide}
+              aria-label="Hide (H)"
+              title="Hide (H)"
             >
-              Hide <span className="text-xs text-text-soft">H</span>
+              Hide
             </button>
           )}
           {onUnhide && (
             <button
-              className="rounded-md border border-emerald-600 px-4 py-2 text-sm text-emerald-300 hover:bg-emerald-900/30"
+              className="rounded-md border border-success px-3 py-2 text-sm text-success hover:bg-success/10"
               onClick={onUnhide}
+              aria-label="Unhide (H)"
+              title="Unhide (H)"
             >
-              Unhide <span className="text-xs text-text-soft">H</span>
+              Unhide
             </button>
           )}
         </div>

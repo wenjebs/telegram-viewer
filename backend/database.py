@@ -1,11 +1,23 @@
 from __future__ import annotations
 
 import sqlite3
+from typing import Literal
 
 import aiosqlite
 from datetime import datetime, timedelta
 
 from utils import utc_now_iso
+
+FacesFilter = Literal["none", "solo", "group"]
+
+
+def _apply_faces_filter(conditions: list[str], faces: FacesFilter | None) -> None:
+    if faces == "none":
+        conditions.append("face_count = 0")
+    elif faces == "solo":
+        conditions.append("face_count = 1")
+    elif faces == "group":
+        conditions.append("face_count >= 2")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS media_items (
@@ -260,24 +272,29 @@ async def _paginate_media(
     cursor_column: str = "date",
     limit: int = 50,
     order_by: str = "id DESC",
+    sort_dir: str = "DESC",
 ) -> list[dict]:
     """Shared cursor-based pagination for media queries.
 
     When cursor_value is provided alongside cursor_id, uses composite
     keyset pagination: (cursor_column, id) < (cursor_value, cursor_id).
     Otherwise falls back to simple id-based pagination.
+
+    sort_dir controls the cursor comparison direction:
+    DESC uses ``<``, ASC uses ``>``.
     """
+    cmp = "<" if sort_dir.upper() == "DESC" else ">"
     params["limit"] = limit
     if cursor_id is not None:
         if cursor_value is not None:
             col = cursor_column
             conditions.append(
-                f"({col} < :cursor_value"
-                f" OR ({col} = :cursor_value AND id < :cursor_id))"
+                f"({col} {cmp} :cursor_value"
+                f" OR ({col} = :cursor_value AND id {cmp} :cursor_id))"
             )
             params["cursor_value"] = cursor_value
         else:
-            conditions.append("id < :cursor_id")
+            conditions.append(f"id {cmp} :cursor_id")
         params["cursor_id"] = cursor_id
 
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
@@ -297,7 +314,8 @@ async def get_media_page(
     media_type: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
-    faces: str | None = None,
+    faces: FacesFilter | None = None,
+    sort: str = "desc",
 ) -> list[dict]:
     conditions = [
         "hidden_at IS NULL",
@@ -326,13 +344,9 @@ async def get_media_page(
         conditions.append("date < :date_to_exclusive")
         params["date_to_exclusive"] = date_to_exclusive
 
-    if faces == "none":
-        conditions.append("face_count = 0")
-    elif faces == "solo":
-        conditions.append("face_count = 1")
-    elif faces == "group":
-        conditions.append("face_count >= 2")
+    _apply_faces_filter(conditions, faces)
 
+    sd = sort.upper()
     return await _paginate_media(
         db,
         conditions,
@@ -341,7 +355,8 @@ async def get_media_page(
         cursor_value=cursor_value,
         cursor_column="date",
         limit=limit,
-        order_by="date DESC, id DESC",
+        order_by=f"date {sd}, id {sd}",
+        sort_dir=sd,
     )
 
 
@@ -575,7 +590,9 @@ async def get_hidden_media_page(
     cursor_id: int | None = None,
     cursor_value: str | None = None,
     limit: int = 50,
+    sort: str = "desc",
 ) -> list[dict]:
+    sd = sort.upper()
     return await _paginate_media(
         db,
         ["hidden_at IS NOT NULL"],
@@ -584,7 +601,8 @@ async def get_hidden_media_page(
         cursor_value=cursor_value,
         cursor_column="hidden_at",
         limit=limit,
-        order_by="hidden_at DESC, id DESC",
+        order_by=f"hidden_at {sd}, id {sd}",
+        sort_dir=sd,
     )
 
 
@@ -635,6 +653,18 @@ async def get_hidden_dialog_count(db: aiosqlite.Connection) -> int:
     return row[0] if row else 0
 
 
+async def get_hidden_media_ids(
+    db: aiosqlite.Connection,
+    sort: str = "desc",
+) -> list[int]:
+    sd = sort.upper()
+    cursor = await db.execute(
+        f"SELECT id FROM media_items WHERE hidden_at IS NOT NULL ORDER BY hidden_at {sd}, id {sd}"
+    )
+    rows = await cursor.fetchall()
+    return [row[0] for row in rows]
+
+
 # endregion
 
 
@@ -660,7 +690,9 @@ async def get_favorites_media_page(
     cursor_id: int | None = None,
     cursor_value: str | None = None,
     limit: int = 50,
+    sort: str = "desc",
 ) -> list[dict]:
+    sd = sort.upper()
     return await _paginate_media(
         db,
         ["favorited_at IS NOT NULL"],
@@ -669,7 +701,8 @@ async def get_favorites_media_page(
         cursor_value=cursor_value,
         cursor_column="favorited_at",
         limit=limit,
-        order_by="favorited_at DESC, id DESC",
+        order_by=f"favorited_at {sd}, id {sd}",
+        sort_dir=sd,
     )
 
 
@@ -681,14 +714,109 @@ async def get_favorites_count(db: aiosqlite.Connection) -> int:
     return row[0] if row else 0
 
 
-async def get_media_count(db: aiosqlite.Connection) -> int:
+async def get_favorites_media_ids(
+    db: aiosqlite.Connection,
+    sort: str = "desc",
+) -> list[int]:
+    sd = sort.upper()
     cursor = await db.execute(
-        "SELECT COUNT(*) FROM media_items"
-        " WHERE hidden_at IS NULL"
-        " AND chat_id NOT IN (SELECT id FROM dialogs WHERE hidden_at IS NOT NULL)"
+        f"SELECT id FROM media_items WHERE favorited_at IS NOT NULL ORDER BY favorited_at {sd}, id {sd}"
+    )
+    rows = await cursor.fetchall()
+    return [row[0] for row in rows]
+
+
+async def get_media_count(
+    db: aiosqlite.Connection,
+    group_ids: list[int] | None = None,
+    media_type: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    faces: FacesFilter | None = None,
+) -> int:
+    conditions = [
+        "hidden_at IS NULL",
+        "chat_id NOT IN (SELECT id FROM dialogs WHERE hidden_at IS NOT NULL)",
+    ]
+    params: dict = {}
+
+    if group_ids:
+        placeholders = ", ".join(f":gid_{i}" for i, _ in enumerate(group_ids))
+        conditions.append(f"chat_id IN ({placeholders})")
+        for i, g in enumerate(group_ids):
+            params[f"gid_{i}"] = g
+
+    if media_type:
+        conditions.append("media_type = :media_type")
+        params["media_type"] = media_type
+
+    if date_from:
+        conditions.append("date >= :date_from")
+        params["date_from"] = date_from
+
+    if date_to:
+        date_to_exclusive = (
+            datetime.fromisoformat(date_to) + timedelta(days=1)
+        ).strftime("%Y-%m-%d")
+        conditions.append("date < :date_to_exclusive")
+        params["date_to_exclusive"] = date_to_exclusive
+
+    _apply_faces_filter(conditions, faces)
+
+    where = " AND ".join(conditions)
+    cursor = await db.execute(
+        f"SELECT COUNT(*) FROM media_items WHERE {where}", params
     )
     row = await cursor.fetchone()
     return row[0] if row else 0
+
+
+async def get_media_ids(
+    db: aiosqlite.Connection,
+    group_ids: list[int] | None = None,
+    media_type: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    faces: FacesFilter | None = None,
+    sort: str = "desc",
+) -> list[int]:
+    conditions = [
+        "hidden_at IS NULL",
+        "chat_id NOT IN (SELECT id FROM dialogs WHERE hidden_at IS NOT NULL)",
+    ]
+    params: dict = {}
+
+    if group_ids:
+        placeholders = ", ".join(f":gid_{i}" for i, _ in enumerate(group_ids))
+        conditions.append(f"chat_id IN ({placeholders})")
+        for i, g in enumerate(group_ids):
+            params[f"gid_{i}"] = g
+
+    if media_type:
+        conditions.append("media_type = :media_type")
+        params["media_type"] = media_type
+
+    if date_from:
+        conditions.append("date >= :date_from")
+        params["date_from"] = date_from
+
+    if date_to:
+        date_to_exclusive = (
+            datetime.fromisoformat(date_to) + timedelta(days=1)
+        ).strftime("%Y-%m-%d")
+        conditions.append("date < :date_to_exclusive")
+        params["date_to_exclusive"] = date_to_exclusive
+
+    _apply_faces_filter(conditions, faces)
+
+    where = " AND ".join(conditions)
+    sd = sort.upper()
+    cursor = await db.execute(
+        f"SELECT id FROM media_items WHERE {where} ORDER BY date {sd}, id {sd}",
+        params,
+    )
+    rows = await cursor.fetchall()
+    return [row[0] for row in rows]
 
 
 async def get_media_counts_by_chat(db: aiosqlite.Connection) -> dict[int, int]:
@@ -969,6 +1097,8 @@ async def get_person_media_page(
     cursor_id: int | None = None,
     cursor_value: str | None = None,
     limit: int = 50,
+    sort: str = "desc",
+    faces: FacesFilter | None = None,
 ) -> list[dict]:
     """Get media items containing a specific person's face."""
     conditions = [
@@ -976,6 +1106,10 @@ async def get_person_media_page(
         "id IN (SELECT media_id FROM faces WHERE person_id = :person_id)",
     ]
     params: dict = {"person_id": person_id}
+
+    _apply_faces_filter(conditions, faces)
+
+    sd = sort.upper()
     return await _paginate_media(
         db,
         conditions,
@@ -984,8 +1118,32 @@ async def get_person_media_page(
         cursor_value=cursor_value,
         cursor_column="date",
         limit=limit,
-        order_by="date DESC, id DESC",
+        order_by=f"date {sd}, id {sd}",
+        sort_dir=sd,
     )
+
+
+async def get_person_media_ids(
+    db: aiosqlite.Connection,
+    person_id: int,
+    faces: FacesFilter | None = None,
+    sort: str = "desc",
+) -> list[int]:
+    conditions = [
+        "hidden_at IS NULL",
+        "id IN (SELECT media_id FROM faces WHERE person_id = :person_id)",
+    ]
+    params: dict = {"person_id": person_id}
+    _apply_faces_filter(conditions, faces)
+
+    where = " AND ".join(conditions)
+    sd = sort.upper()
+    cursor = await db.execute(
+        f"SELECT id FROM media_items WHERE {where} ORDER BY date {sd}, id {sd}",
+        params,
+    )
+    rows = await cursor.fetchall()
+    return [row[0] for row in rows]
 
 
 async def get_face_scan_state(db: aiosqlite.Connection) -> dict:
@@ -1045,6 +1203,123 @@ async def get_person_count(db: aiosqlite.Connection) -> int:
     cursor = await db.execute("SELECT COUNT(*) FROM persons")
     row = await cursor.fetchone()
     return row[0] if row else 0
+
+
+# ── Settings export/import ──────────────────────────────────────────
+
+
+async def export_settings(db: aiosqlite.Connection) -> dict:
+    """Export all user curation settings as a versioned dict."""
+    hidden_groups = [
+        {"chat_id": r["id"], "hidden_at": r["hidden_at"]}
+        async for r in await db.execute(
+            "SELECT id, hidden_at FROM dialogs WHERE hidden_at IS NOT NULL"
+        )
+    ]
+    inactive_groups = [
+        {"chat_id": r["chat_id"]}
+        async for r in await db.execute(
+            "SELECT chat_id FROM sync_state WHERE active = 0"
+        )
+    ]
+    hidden_media = [
+        {"message_id": r["message_id"], "chat_id": r["chat_id"], "hidden_at": r["hidden_at"]}
+        async for r in await db.execute(
+            "SELECT message_id, chat_id, hidden_at FROM media_items WHERE hidden_at IS NOT NULL"
+        )
+    ]
+    favorited_media = [
+        {"message_id": r["message_id"], "chat_id": r["chat_id"], "favorited_at": r["favorited_at"]}
+        async for r in await db.execute(
+            "SELECT message_id, chat_id, favorited_at FROM media_items WHERE favorited_at IS NOT NULL"
+        )
+    ]
+    person_names = [
+        {"person_id": r["id"], "name": r["name"]}
+        async for r in await db.execute(
+            "SELECT id, name FROM persons WHERE name IS NOT NULL"
+        )
+    ]
+    return {
+        "version": 1,
+        "exported_at": utc_now_iso(),
+        "hidden_groups": hidden_groups,
+        "inactive_groups": inactive_groups,
+        "hidden_media": hidden_media,
+        "favorited_media": favorited_media,
+        "person_names": person_names,
+    }
+
+
+async def import_settings(db: aiosqlite.Connection, data: dict) -> dict:
+    """Merge imported settings into the database. Additive only."""
+    applied = {"hidden_groups": 0, "inactive_groups": 0, "hidden_media": 0, "favorited_media": 0, "person_names": 0}
+    skipped = {"unknown_ids": 0, "already_set": 0}
+
+    for item in data.get("hidden_groups", []):
+        row = await (await db.execute("SELECT hidden_at FROM dialogs WHERE id = ?", [item["chat_id"]])).fetchone()
+        if not row:
+            skipped["unknown_ids"] += 1
+        elif row["hidden_at"]:
+            skipped["already_set"] += 1
+        else:
+            await db.execute("UPDATE dialogs SET hidden_at = ? WHERE id = ?", [item["hidden_at"], item["chat_id"]])
+            applied["hidden_groups"] += 1
+
+    for item in data.get("inactive_groups", []):
+        row = await (await db.execute("SELECT active FROM sync_state WHERE chat_id = ?", [item["chat_id"]])).fetchone()
+        if not row:
+            skipped["unknown_ids"] += 1
+        elif row["active"] == 0:
+            skipped["already_set"] += 1
+        else:
+            await db.execute("UPDATE sync_state SET active = 0 WHERE chat_id = ?", [item["chat_id"]])
+            applied["inactive_groups"] += 1
+
+    for item in data.get("hidden_media", []):
+        row = await (await db.execute(
+            "SELECT hidden_at FROM media_items WHERE message_id = ? AND chat_id = ?",
+            [item["message_id"], item["chat_id"]],
+        )).fetchone()
+        if not row:
+            skipped["unknown_ids"] += 1
+        elif row["hidden_at"]:
+            skipped["already_set"] += 1
+        else:
+            await db.execute(
+                "UPDATE media_items SET hidden_at = ? WHERE message_id = ? AND chat_id = ?",
+                [item["hidden_at"], item["message_id"], item["chat_id"]],
+            )
+            applied["hidden_media"] += 1
+
+    for item in data.get("favorited_media", []):
+        row = await (await db.execute(
+            "SELECT favorited_at FROM media_items WHERE message_id = ? AND chat_id = ?",
+            [item["message_id"], item["chat_id"]],
+        )).fetchone()
+        if not row:
+            skipped["unknown_ids"] += 1
+        elif row["favorited_at"]:
+            skipped["already_set"] += 1
+        else:
+            await db.execute(
+                "UPDATE media_items SET favorited_at = ? WHERE message_id = ? AND chat_id = ?",
+                [item["favorited_at"], item["message_id"], item["chat_id"]],
+            )
+            applied["favorited_media"] += 1
+
+    for item in data.get("person_names", []):
+        row = await (await db.execute("SELECT name FROM persons WHERE id = ?", [item["person_id"]])).fetchone()
+        if not row:
+            skipped["unknown_ids"] += 1
+        elif row["name"]:
+            skipped["already_set"] += 1
+        else:
+            await db.execute("UPDATE persons SET name = ? WHERE id = ?", [item["name"], item["person_id"]])
+            applied["person_names"] += 1
+
+    await db.commit()
+    return {"applied": applied, "skipped": skipped}
 
 
 # endregion

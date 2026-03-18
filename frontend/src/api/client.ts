@@ -3,7 +3,9 @@ import {
   AuthStatus,
   CountResponse,
   FaceScanStatus,
+  IdsResponse,
   Group,
+  ImportResult,
   MediaPage,
   Person,
   PreviewCounts,
@@ -38,6 +40,7 @@ async function fetchJSON<T>(
     return schema.parse(data)
   } catch (e) {
     if (e instanceof ZodError) {
+      // eslint-disable-next-line no-console
       console.error('API validation failed:', path, e.issues)
       throw new Error(`Unexpected API response from ${path}`, { cause: e })
     }
@@ -161,6 +164,7 @@ export const getMedia = (params: {
   dateFrom?: string
   dateTo?: string
   faces?: string
+  sort?: string
 }) => {
   const sp = buildSearchParams({
     cursor: params.cursor,
@@ -170,6 +174,7 @@ export const getMedia = (params: {
     date_from: params.dateFrom,
     date_to: params.dateTo,
     faces: params.faces,
+    sort: params.sort,
   })
   return fetchJSON(`/media?${sp}`, MediaPage)
 }
@@ -219,10 +224,15 @@ export const unfavoriteMediaBatch = (mediaIds: number[]) =>
     body: JSON.stringify({ media_ids: mediaIds }),
   })
 
-export const getHiddenMedia = (params: { cursor?: string; limit?: number }) => {
+export const getHiddenMedia = (params: {
+  cursor?: string
+  limit?: number
+  sort?: string
+}) => {
   const sp = buildSearchParams({
     cursor: params.cursor,
     limit: params.limit,
+    sort: params.sort,
   })
   return fetchJSON(`/media/hidden?${sp}`, MediaPage)
 }
@@ -241,10 +251,12 @@ export const toggleFavorite = (mediaId: number) =>
 export const getFavoritesMedia = (params: {
   cursor?: string
   limit?: number
+  sort?: string
 }) => {
   const sp = buildSearchParams({
     cursor: params.cursor,
     limit: params.limit,
+    sort: params.sort,
   })
   return fetchJSON(`/media/favorites?${sp}`, MediaPage)
 }
@@ -252,7 +264,66 @@ export const getFavoritesMedia = (params: {
 export const getFavoritesCount = () =>
   fetchJSON('/media/favorites/count', CountResponse)
 
-export const getMediaCount = () => fetchJSON('/media/count', CountResponse)
+export const getMediaIds = (params: {
+  groups?: number[]
+  type?: string
+  dateFrom?: string
+  dateTo?: string
+  faces?: string
+  sort?: string
+}) => {
+  const sp = buildSearchParams({
+    groups: params.groups,
+    type: params.type,
+    date_from: params.dateFrom,
+    date_to: params.dateTo,
+    faces: params.faces,
+    sort: params.sort,
+  })
+  const qs = sp.toString()
+  return fetchJSON(`/media/ids${qs ? `?${qs}` : ''}`, IdsResponse)
+}
+
+export const getHiddenMediaIds = (sort?: string) => {
+  const sp = buildSearchParams({ sort })
+  return fetchJSON(`/media/hidden/ids?${sp}`, IdsResponse)
+}
+
+export const getFavoritesMediaIds = (sort?: string) => {
+  const sp = buildSearchParams({ sort })
+  return fetchJSON(`/media/favorites/ids?${sp}`, IdsResponse)
+}
+
+export const getPersonMediaIds = (params: {
+  personId: number
+  sort?: string
+  faces?: string
+}) => {
+  const sp = buildSearchParams({ sort: params.sort, faces: params.faces })
+  return fetchJSON(
+    `/faces/persons/${params.personId}/media/ids?${sp}`,
+    IdsResponse,
+  )
+}
+
+export const getMediaCount = (params?: {
+  groups?: number[]
+  type?: string
+  dateFrom?: string
+  dateTo?: string
+  faces?: string
+}) => {
+  if (!params) return fetchJSON('/media/count', CountResponse)
+  const sp = buildSearchParams({
+    groups: params.groups,
+    type: params.type,
+    date_from: params.dateFrom,
+    date_to: params.dateTo,
+    faces: params.faces,
+  })
+  const qs = sp.toString()
+  return fetchJSON(`/media/count${qs ? `?${qs}` : ''}`, CountResponse)
+}
 
 // Download (legacy sync endpoint kept for compatibility)
 export async function downloadZip(mediaIds: number[]): Promise<Blob> {
@@ -307,10 +378,14 @@ export const getPersonMedia = (params: {
   personId: number
   cursor?: string
   limit?: number
+  sort?: string
+  faces?: string
 }) => {
   const sp = buildSearchParams({
     cursor: params.cursor,
     limit: params.limit,
+    sort: params.sort,
+    faces: params.faces,
   })
   return fetchJSON(`/faces/persons/${params.personId}/media?${sp}`, MediaPage)
 }
@@ -343,3 +418,30 @@ export const removeFaceFromPerson = (personId: number, faceId: number) =>
 
 export const getFaceCropUrl = (faceId: number, updatedAt?: string) =>
   `${BASE}/faces/${faceId}/crop${updatedAt ? `?v=${updatedAt}` : ''}`
+
+// Settings
+export async function exportSettings(): Promise<void> {
+  const resp = await fetch(`${BASE}/settings/export`)
+  await ensureOk(resp)
+  const blob = await resp.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download =
+    resp.headers.get('content-disposition')?.match(/filename="(.+)"/)?.[1] ??
+    'telegram-viewer-settings.json'
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+export async function importSettings(file: File): Promise<ImportResult> {
+  const formData = new FormData()
+  formData.append('file', file)
+  const resp = await fetch(`${BASE}/settings/import`, {
+    method: 'POST',
+    body: formData,
+  })
+  await ensureOk(resp)
+  const data = await resp.json()
+  return ImportResult.parse(data)
+}

@@ -1,3 +1,5 @@
+// oxlint-disable-next-line no-unassigned-import -- side-effect: extends expect matchers
+import '@testing-library/jest-dom'
 import { cleanup } from '@testing-library/react'
 import { afterEach, beforeEach } from 'vitest'
 

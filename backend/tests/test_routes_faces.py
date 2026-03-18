@@ -421,6 +421,78 @@ async def test_person_media_pagination(face_db):
     assert data["next_cursor"] is not None
 
 
+@pytest.mark.asyncio
+async def test_person_media_faces_filter(face_db):
+    """Filter person media by face_count: solo (1), group (>=2), none (0)."""
+    db, _ = face_db
+
+    # Seed 3 media items with different face_count values
+    mid_solo = await _seed_media(db, msg_id=20, chat_id=1)
+    mid_group = await _seed_media(db, msg_id=21, chat_id=1)
+    mid_none = await _seed_media(db, msg_id=22, chat_id=1)
+
+    # Set face_count on each media item
+    await db.execute("UPDATE media_items SET face_count = 1 WHERE id = ?", (mid_solo,))
+    await db.execute("UPDATE media_items SET face_count = 3 WHERE id = ?", (mid_group,))
+    await db.execute("UPDATE media_items SET face_count = 0 WHERE id = ?", (mid_none,))
+    await db.commit()
+
+    # Create a person with faces linked to all 3 media items
+    now = utc_now_iso()
+    face_rows = []
+    for mid in (mid_solo, mid_group, mid_none):
+        face_rows.append(
+            {
+                "media_id": mid,
+                "embedding": _make_embedding(),
+                "bbox_x": 0.1,
+                "bbox_y": 0.1,
+                "bbox_w": 0.2,
+                "bbox_h": 0.2,
+                "confidence": 0.9,
+                "crop_path": None,
+                "created_at": now,
+            }
+        )
+    fids = await insert_faces_batch(db, face_rows)
+    await bulk_assign_persons(
+        db, [{"face_ids": fids, "representative_face_id": fids[0]}]
+    )
+    await db.commit()
+
+    cursor = await db.execute("SELECT person_id FROM faces WHERE id = ?", (fids[0],))
+    pid = (await cursor.fetchone())[0]
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        # solo → only face_count=1
+        resp = await client.get(f"/faces/persons/{pid}/media?faces=solo")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["items"]) == 1
+        assert data["items"][0]["id"] == mid_solo
+
+        # group → only face_count>=2
+        resp = await client.get(f"/faces/persons/{pid}/media?faces=group")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["items"]) == 1
+        assert data["items"][0]["id"] == mid_group
+
+        # none → only face_count=0
+        resp = await client.get(f"/faces/persons/{pid}/media?faces=none")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["items"]) == 1
+        assert data["items"][0]["id"] == mid_none
+
+        # no filter → all 3
+        resp = await client.get(f"/faces/persons/{pid}/media")
+        assert resp.status_code == 200
+        assert len(resp.json()["items"]) == 3
+
+
 # ---------------------------------------------------------------------------
 # Face ops: remove face, get crop
 # ---------------------------------------------------------------------------

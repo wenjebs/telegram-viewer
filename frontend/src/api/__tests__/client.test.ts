@@ -15,6 +15,7 @@ import {
   getFaceScanStatus,
   getMedia,
   getPersons,
+  getPersonMedia,
   getSimilarGroups,
   getSyncStatus,
   getThumbnailUrl,
@@ -321,6 +322,17 @@ describe('getSimilarGroups', () => {
     await getSimilarGroups(0.7)
     const url = fn.mock.calls[0][0] as string
     expect(url).toContain('threshold=0.7')
+  })
+})
+
+describe('getPersonMedia', () => {
+  it('includes faces param in URL', async () => {
+    const fn = mockFetch({
+      '/faces/persons/1/media': { items: [], next_cursor: null },
+    })
+    await getPersonMedia({ personId: 1, faces: 'solo' })
+    const url = fn.mock.calls[0][0] as string
+    expect(url).toContain('faces=solo')
   })
 })
 

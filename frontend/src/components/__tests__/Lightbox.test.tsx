@@ -97,8 +97,8 @@ describe('Lightbox', () => {
     const { container } = render(
       <Lightbox item={item} {...defaultProps} selected />,
     )
-    // Selected indicator is a blue circle with checkmark svg
-    const indicator = container.querySelector('.border-blue-500.bg-blue-500')
+    // Selected indicator is a circle with checkmark svg
+    const indicator = container.querySelector('.border-accent.bg-accent')
     expect(indicator).toBeTruthy()
   })
 

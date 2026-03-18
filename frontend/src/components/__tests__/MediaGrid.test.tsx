@@ -42,7 +42,7 @@ describe('MediaGrid', () => {
 
   it('renders empty state when no items and not loading', () => {
     render(<MediaGrid items={[]} {...defaultProps} />)
-    expect(screen.getByText(/No media found/)).toBeTruthy()
+    expect(screen.getByText(/No media yet/)).toBeTruthy()
   })
 
   it('renders syncing state when syncing with no items', () => {
@@ -70,9 +70,9 @@ describe('MediaGrid', () => {
     expect(heading.textContent).toContain('15')
   })
 
-  it('shows Load more button when hasMore is true', () => {
+  it('shows skeleton when loading with more pages', () => {
     const items = [makeMediaItem()]
-    render(<MediaGrid items={items} {...defaultProps} hasMore />)
-    expect(screen.getByText('Load more')).toBeTruthy()
+    render(<MediaGrid items={items} {...defaultProps} hasMore loading />)
+    expect(screen.getByTestId('skeleton-header')).toBeTruthy()
   })
 })

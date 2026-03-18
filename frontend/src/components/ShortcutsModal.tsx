@@ -10,14 +10,16 @@ const groups: ShortcutGroup[] = [
     title: 'General',
     shortcuts: [
       { key: '?', description: 'Show keyboard shortcuts' },
+      { key: '/', description: 'Toggle filters panel' },
       { key: 'C', description: 'Toggle chats panel' },
-      { key: 'M', description: 'Go to main view' },
+      { key: 'G', description: 'Go to gallery view' },
       { key: 'P', description: 'Go to people view' },
       { key: 'F', description: 'Go to favorites view' },
       { key: 'H', description: 'Toggle hidden media view' },
       { key: 'Shift+H', description: 'Toggle hidden chats' },
       { key: 'Shift+D', description: 'Hide selected groups' },
       { key: 'Esc', description: 'Exit select mode / close modal' },
+      { key: 'Shift+Click', description: 'Rename person (People view)' },
     ],
   },
   {
@@ -62,7 +64,11 @@ export default function ShortcutsModal({ onClose }: Props) {
       <div className="max-h-[80vh] w-full max-w-sm overflow-y-auto rounded-lg bg-surface p-5">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-sm font-medium text-text">Keyboard shortcuts</h2>
-          <button className="text-text-soft hover:text-text" onClick={onClose}>
+          <button
+            className="text-text-soft hover:text-text"
+            onClick={onClose}
+            aria-label="Close"
+          >
             <svg
               className="h-5 w-5"
               viewBox="0 0 20 20"

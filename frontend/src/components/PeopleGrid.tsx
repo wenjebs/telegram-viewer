@@ -19,6 +19,7 @@ interface Props {
   similarGroups?: number[][]
   onSelectGroup?: (ids: number[]) => void
   onRename?: (personId: number, name: string) => void
+  onMetaClick?: (id: number) => void
   containerRef?: React.RefObject<HTMLDivElement | null>
   dragHandlers?: {
     onPointerDown: (e: React.PointerEvent) => void
@@ -36,6 +37,7 @@ function PersonCard({
   onToggle,
   onPersonClick,
   onRename,
+  onMetaClick,
 }: {
   person: Person
   selectMode?: boolean
@@ -43,6 +45,7 @@ function PersonCard({
   onToggle?: (id: number) => void
   onPersonClick: (person: Person) => void
   onRename?: (personId: number, name: string) => void
+  onMetaClick?: (id: number) => void
 }) {
   const [editing, setEditing] = useState(false)
   const [editName, setEditName] = useState(person.display_name)
@@ -61,11 +64,16 @@ function PersonCard({
       data-item-id={person.id}
       className={`flex flex-col items-center gap-1.5 rounded-lg p-2 cursor-pointer transition-colors hover:bg-hover/60${
         selectMode && selectedIds?.has(person.id)
-          ? ' ring-2 ring-sky-500 bg-sky-500/5'
+          ? ' ring-2 ring-accent bg-accent/5'
           : ''
       }`}
       onClick={(e) => {
         if (editing) return
+        if ((e.metaKey || e.ctrlKey) && onMetaClick) {
+          e.preventDefault()
+          onMetaClick(person.id)
+          return
+        }
         if (e.shiftKey && onRename) {
           e.preventDefault()
           setEditName(person.name ?? '')
@@ -101,9 +109,12 @@ function PersonCard({
         </div>
         {selectMode && (
           <div
+            role="checkbox"
+            aria-checked={selectedIds?.has(person.id) ?? false}
+            aria-label={`Select ${person.display_name}`}
             className={`absolute -top-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full border-2 shadow-sm ${
               selectedIds?.has(person.id)
-                ? 'border-sky-500 bg-sky-500'
+                ? 'border-accent bg-accent'
                 : 'border-text-soft bg-surface/80'
             }`}
           >
@@ -156,6 +167,7 @@ export default function PeopleGrid({
   similarGroups = [],
   onSelectGroup,
   onRename,
+  onMetaClick,
   containerRef,
   dragHandlers,
   selectionRect,
@@ -215,6 +227,7 @@ export default function PeopleGrid({
     onToggle,
     onPersonClick,
     onRename,
+    onMetaClick,
   }
 
   return (
@@ -233,7 +246,7 @@ export default function PeopleGrid({
               <div className="h-px flex-1 bg-surface-alt" />
               {selectMode && onSelectGroup && (
                 <button
-                  className="text-xs text-sky-400 hover:text-sky-300"
+                  className="text-xs text-accent hover:text-accent-hover"
                   onClick={() => onSelectGroup(section.group!)}
                 >
                   Select group
@@ -256,7 +269,7 @@ export default function PeopleGrid({
       ))}
       {selectionRect && (
         <div
-          className="pointer-events-none fixed z-50 border border-sky-500 bg-sky-500/10"
+          className="pointer-events-none fixed z-50 border border-accent bg-accent/10"
           style={{
             left: selectionRect.x,
             top: selectionRect.y,

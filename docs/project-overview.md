@@ -12,4 +12,5 @@ Local web app that connects to a user's Telegram account, indexes media (photos,
 - Multi-select: click/shift-click/drag-rectangle selection, batch download as ZIP (async prepare-poll-download flow with per-file progress), batch hide/unhide/favorite
 - Favorites & hidden: hide/unhide media and groups, favorite media items, dedicated view modes with count badges
 - Face recognition: scan indexed photos for faces (InsightFace detection + DBSCAN clustering), browse detected persons, rename/merge persons, view media filtered by person. Progress-tracked background scan with resume on interruption.
-- URL state: view mode, filters (media type, chat type, faces, date range, display groups), lightbox item, selected person, and search query are stored in URL search params for deep-linking, page refresh persistence, and back/forward navigation support.
+- Settings backup/restore: export all user preferences (hidden/inactive groups, favorites, person names) as JSON, import with additive-only merge and summary feedback.
+- URL state: view mode, filters (media type, chat type, sync status, faces, date range, sort order, display groups), lightbox item, selected person, and search query are stored in URL search params for deep-linking, page refresh persistence, and back/forward navigation support.

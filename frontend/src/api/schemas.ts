@@ -3,6 +3,7 @@ import { z } from 'zod'
 // --- Reusable response schemas ---
 export const SuccessResponse = z.object({ success: z.boolean() })
 export const CountResponse = z.object({ count: z.number() })
+export const IdsResponse = z.object({ ids: z.array(z.number()) })
 
 // --- Domain schemas ---
 export const AuthStatus = z.object({ authenticated: z.boolean() })
@@ -83,6 +84,20 @@ export const PreviewCountItem = z.object({
 
 export const PreviewCounts = z.record(z.string(), PreviewCountItem.nullable())
 
+export const ImportResult = z.object({
+  applied: z.object({
+    hidden_groups: z.number(),
+    inactive_groups: z.number(),
+    hidden_media: z.number(),
+    favorited_media: z.number(),
+    person_names: z.number(),
+  }),
+  skipped: z.object({
+    unknown_ids: z.number(),
+    already_set: z.number(),
+  }),
+})
+
 // --- Inferred types (exported for consumers) ---
 export type AuthStatus = z.infer<typeof AuthStatus>
 export type Group = z.infer<typeof Group>
@@ -95,3 +110,5 @@ export type ZipJobResponse = z.infer<typeof ZipJobResponse>
 export type ZipStatusResponse = z.infer<typeof ZipStatusResponse>
 export type PreviewCountItem = z.infer<typeof PreviewCountItem>
 export type PreviewCounts = z.infer<typeof PreviewCounts>
+export type IdsResponse = z.infer<typeof IdsResponse>
+export type ImportResult = z.infer<typeof ImportResult>

@@ -58,8 +58,8 @@ describe('SelectionBar', () => {
   it('calls onCancel when cancel clicked', () => {
     const onCancel = vi.fn()
     render(<SelectionBar {...defaultProps} onCancel={onCancel} />)
-    // Cancel button shows a cross character
-    fireEvent.click(screen.getByText('\u2715'))
+    // Cancel button is an SVG icon with aria-label
+    fireEvent.click(screen.getByLabelText('Exit select mode'))
     expect(onCancel).toHaveBeenCalled()
   })
 

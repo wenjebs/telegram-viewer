@@ -664,3 +664,73 @@ async def test_prepare_zip_missing_ids(seeded_db, mock_tg, mock_bg_tasks, mock_z
     async with _client() as client:
         resp = await client.post("/media/prepare-zip", json={"media_ids": [9999]})
     assert resp.status_code == 404
+
+
+# ===========================================================================
+# Sort parameter
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_list_media_sort_asc(seeded_db):
+    """GET /media?sort=asc returns items in ascending date order."""
+    async with _client() as client:
+        resp = await client.get("/media?sort=asc")
+    data = resp.json()
+    dates = [item["date"] for item in data["items"]]
+    assert dates == sorted(dates)
+
+
+@pytest.mark.asyncio
+async def test_list_media_sort_desc(seeded_db):
+    """GET /media?sort=desc returns items in descending date order (default)."""
+    async with _client() as client:
+        resp = await client.get("/media?sort=desc")
+    data = resp.json()
+    dates = [item["date"] for item in data["items"]]
+    assert dates == sorted(dates, reverse=True)
+
+
+@pytest.mark.asyncio
+async def test_list_media_sort_asc_pagination(seeded_db):
+    """Cursor pagination works correctly with sort=asc."""
+    async with _client() as client:
+        resp1 = await client.get("/media?sort=asc&limit=2")
+    data1 = resp1.json()
+    assert len(data1["items"]) == 2
+    dates1 = [item["date"] for item in data1["items"]]
+    assert dates1 == sorted(dates1)
+
+    async with _client() as client:
+        resp2 = await client.get(f"/media?sort=asc&limit=2&cursor={data1['next_cursor']}")
+    data2 = resp2.json()
+    assert len(data2["items"]) == 1
+    # Second page dates should be after first page dates
+    assert data2["items"][0]["date"] >= dates1[-1]
+
+
+@pytest.mark.asyncio
+async def test_list_hidden_media_sort_asc(seeded_db):
+    """GET /media/hidden?sort=asc returns hidden items in ascending order."""
+    # Hide two items
+    await hide_media_item(seeded_db, 1)
+    await hide_media_item(seeded_db, 2)
+    async with _client() as client:
+        resp = await client.get("/media/hidden?sort=asc")
+    data = resp.json()
+    assert len(data["items"]) == 2
+    hidden_ats = [item["hidden_at"] for item in data["items"]]
+    assert hidden_ats == sorted(hidden_ats)
+
+
+@pytest.mark.asyncio
+async def test_list_favorites_media_sort_asc(seeded_db):
+    """GET /media/favorites?sort=asc returns favorites in ascending order."""
+    await favorite_media_item(seeded_db, 1)
+    await favorite_media_item(seeded_db, 2)
+    async with _client() as client:
+        resp = await client.get("/media/favorites?sort=asc")
+    data = resp.json()
+    assert len(data["items"]) == 2
+    fav_ats = [item["favorited_at"] for item in data["items"]]
+    assert fav_ats == sorted(fav_ats)

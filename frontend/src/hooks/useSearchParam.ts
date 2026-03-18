@@ -1,12 +1,12 @@
 import { useCallback } from 'react'
-import { useNavigate } from '@tanstack/react-router'
-import { Route } from '#/routes/index'
+import { getRouteApi, useNavigate } from '@tanstack/react-router'
+import type { SearchParams } from '#/routes/searchSchema'
 
-type SearchParams = ReturnType<typeof Route.useSearch>
+const routeApi = getRouteApi('/')
 
 export function useSearchParams() {
-  const search = Route.useSearch()
-  const navigate = useNavigate({ from: Route.fullPath })
+  const search = routeApi.useSearch() as SearchParams
+  const navigate = useNavigate({ from: '/' })
 
   const setSearch = useCallback(
     (updates: Partial<SearchParams>, opts?: { replace?: boolean }) => {

@@ -1,5 +1,5 @@
 import { join } from 'path'
-import { readdir, stat } from 'fs/promises'
+import { readdir } from 'fs/promises'
 import server from './dist/server/server.js'
 
 const CLIENT_DIR = join(import.meta.dir, 'dist', 'client')
@@ -33,4 +33,5 @@ Bun.serve({
   },
 })
 
+// eslint-disable-next-line no-console
 console.log(`Server listening on port ${Number(process.env.PORT) || 3000}`)

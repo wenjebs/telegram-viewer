@@ -31,6 +31,22 @@ describe('usePersonMedia', () => {
     expect(fetchFn).not.toHaveBeenCalled()
   })
 
+  it('passes faces param in fetch URL', async () => {
+    const items = [makeMediaItem()]
+    const fetchFn = mockFetch({
+      '/api/faces/persons/1/media': makeMediaPage(items),
+    })
+
+    const { result } = renderHook(
+      () => usePersonMedia(1, true, 'desc', 'solo'),
+      { wrapper: createWrapper() },
+    )
+
+    await waitFor(() => expect(result.current.items.length).toBe(1))
+    const url = fetchFn.mock.calls[0][0] as string
+    expect(url).toContain('faces=solo')
+  })
+
   it('removeItems filters items from cache', async () => {
     const items = [makeMediaItem(), makeMediaItem(), makeMediaItem()]
     mockFetch({

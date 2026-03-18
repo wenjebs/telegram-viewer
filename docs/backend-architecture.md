@@ -29,15 +29,15 @@
 - `POST /unhide-batch` — unhide multiple groups
 
 **Media** (`/media`):
-- `GET /` — cursor-paginated list (filters: groups, type, date_from, date_to, faces; limit 1-200, default 50). Excludes hidden items. `faces` filter: `none` (0 faces), `solo` (1 face), `group` (2+ faces).
+- `GET /` — cursor-paginated list (filters: groups, type, date_from, date_to, faces, sort; limit 1-200, default 50). Excludes hidden items. `faces` filter: `none` (0 faces), `solo` (1 face), `group` (2+ faces).
 - `POST /download-zip` — (legacy sync) accepts `{media_ids: int[]}`, max 200 items, ensures cache, builds temp zip, returns FileResponse with BackgroundTask cleanup
 - `POST /prepare-zip` — async zip: accepts `{media_ids: int[]}`, max 200, validates, fires background job, returns 202 `{job_id}`. Background task downloads uncached files (with per-file progress), then builds zip with ZIP_STORED for media
 - `GET /zip-status/{job_id}` — poll zip job progress `{status, files_ready, files_total, error}`. Status: preparing → zipping → done | error
 - `GET /zip-download/{job_id}` — download completed zip file, auto-cleans up job + temp file via BackgroundTask
-- `GET /hidden` — paginated list of hidden items, sorted by hidden_at DESC
+- `GET /hidden` — paginated list of hidden items (sort param), sorted by hidden_at DESC
 - `GET /hidden/count` — returns `{count: int}`
 - `POST /unhide-batch` — accepts `{media_ids: int[]}`, unhides items
-- `GET /favorites` — paginated list of favorited items, sorted by favorited_at DESC
+- `GET /favorites` — paginated list of favorited items (sort param), sorted by favorited_at DESC
 - `GET /favorites/count` — returns `{count: int}`
 - `POST /{media_id}/hide` — sets hidden_at timestamp
 - `POST /{media_id}/unhide` — clears hidden_at
@@ -45,7 +45,7 @@
 - `POST /favorite-batch` — favorite multiple items
 - `POST /unfavorite-batch` — unfavorite multiple items
 - `POST /{media_id}/favorite` — toggles favorited_at (sets or clears), returns `{success, favorited}`
-- `GET /count` — total media count (excluding hidden), returns `{count: int}`
+- `GET /count` — media count (excluding hidden) with optional filters (groups, type, date range, faces), returns `{count: int}`
 - `GET /{media_id}/thumbnail` — cached locally on disk, fetched from Telegram on miss, HTTP Cache-Control headers (24h immutable)
 - `GET /{media_id}/download` — cached locally on disk, fetched from Telegram on miss. Videos stream progressively via `StreamingResponse` + Telethon `iter_download` (tee-to-disk caching); non-videos buffer fully then return `FileResponse` (range request support). HTTP Cache-Control headers (24h immutable)
 
@@ -61,8 +61,12 @@ Note: Static routes (/hidden, /favorites, /unhide-batch, /download-zip, /prepare
 - `GET /persons/{person_id}` — single person with face count, representative face, avatar crop
 - `PATCH /persons/{person_id}` — rename a person
 - `DELETE /persons/{person_id}/faces/{face_id}` — remove a face from a person (unassign + decrement count)
-- `GET /persons/{person_id}/media` — cursor-paginated media items containing a person's face
+- `GET /persons/{person_id}/media` — cursor-paginated media items containing a person's face. Optional `faces` filter (`none`/`solo`/`group`) for filtering by face count
 - `GET /{face_id}/crop` — JPEG face crop image (30% bbox expansion, 112x112 resize)
+
+**Settings** (`/settings`, 2 endpoints):
+- `GET /export` — export all user preferences (hidden/inactive groups, hidden/favorited media, person names) as JSON file attachment with version metadata
+- `POST /import` — import settings from JSON file upload (max 10 MB, additive-only merge). Returns `{applied: {counts}, skipped: {unknown_ids, already_set}}`
 
 ## Database (SQLite via aiosqlite)
 
@@ -112,4 +116,4 @@ Telethon wrapper (`TelegramClientWrapper`) with:
 - `face_scanner.py` — InsightFace detection + DBSCAN clustering pipeline
 - `utils.py` — `fire_and_forget()` background task tracking with done-callback cleanup and error logging, `utc_now_iso()` ISO 8601 UTC timestamp helper, `parse_cursor()` composite cursor parsing, `build_media_response()` response normalization + pagination cursor
 - `deps.py` — FastAPI dependency injection (`get_db`, `get_tg`, `get_sync_status`, `get_background_tasks`, `get_zip_jobs`)
-- `routes/` — auth.py, groups.py, media.py, faces.py
+- `routes/` — auth.py, groups.py, media.py, faces.py, settings.py

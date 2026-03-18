@@ -1,63 +1,28 @@
-import { useMemo, useCallback } from 'react'
-import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query'
-import type { MediaPage } from '#/api/schemas'
+import { useMemo } from 'react'
 import { getPersonMedia } from '#/api/client'
+import { useInfiniteMediaQuery } from '#/hooks/useInfiniteMediaQuery'
 
-export function usePersonMedia(personId: number | null, enabled = false) {
-  const queryClient = useQueryClient()
+export function usePersonMedia(
+  personId: number | null,
+  enabled = false,
+  sort?: string,
+  faces?: string | null,
+) {
   const queryKey = useMemo(
-    () => ['faces', 'persons', personId, 'media'] as const,
-    [personId],
+    () => ['faces', 'persons', personId, 'media', { sort, faces }] as const,
+    [personId, sort, faces],
   )
 
-  const query = useInfiniteQuery({
+  return useInfiniteMediaQuery(
     queryKey,
-    queryFn: ({ pageParam }) =>
+    ({ pageParam }) =>
       getPersonMedia({
         personId: personId!,
         cursor: pageParam,
         limit: 50,
+        sort,
+        faces: faces ?? undefined,
       }),
-    getNextPageParam: (lastPage: MediaPage) =>
-      lastPage.next_cursor ?? undefined,
-    initialPageParam: undefined as string | undefined,
-    enabled: enabled && personId != null,
-  })
-
-  const items = useMemo(
-    () => query.data?.pages.flatMap((p) => p.items) ?? [],
-    [query.data],
+    enabled && personId != null,
   )
-
-  const removeItems = useCallback(
-    (ids: number[]) => {
-      const idSet = new Set(ids)
-      queryClient.setQueryData(queryKey, (old: typeof query.data) => {
-        if (!old) return old
-        return {
-          ...old,
-          pages: old.pages.map((page) => ({
-            ...page,
-            items: page.items.filter((item) => !idSet.has(item.id)),
-          })),
-        }
-      })
-    },
-    [queryClient, queryKey],
-  )
-
-  const removeItem = useCallback(
-    (id: number) => removeItems([id]),
-    [removeItems],
-  )
-
-  return {
-    items,
-    loading: query.isLoading || query.isFetchingNextPage,
-    error: query.error ? String(query.error) : null,
-    hasMore: query.hasNextPage ?? false,
-    fetchNextPage: query.fetchNextPage,
-    removeItem,
-    removeItems,
-  }
 }

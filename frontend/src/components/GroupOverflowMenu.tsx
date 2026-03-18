@@ -60,7 +60,7 @@ export default function GroupOverflowMenu({
     <>
       <button
         ref={refs.setReference}
-        className="shrink-0 rounded p-1 text-neutral-500 opacity-0 hover:bg-neutral-700 hover:text-neutral-300 group-hover:opacity-100"
+        className="shrink-0 rounded p-1 text-text-soft opacity-0 hover:bg-hover hover:text-text group-hover:opacity-100"
         onClick={(e) => {
           e.preventDefault()
           e.stopPropagation()
@@ -79,11 +79,11 @@ export default function GroupOverflowMenu({
           <div
             ref={refs.setFloating}
             style={floatingStyles}
-            className="z-50 min-w-[180px] rounded-lg border border-neutral-700 bg-neutral-800 py-1 shadow-lg"
+            className="z-50 min-w-[180px] rounded-lg border border-border bg-surface py-1 shadow-lg"
             {...getFloatingProps()}
           >
             <button
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-amber-400 hover:bg-neutral-700"
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-warning hover:bg-hover"
               onClick={handleHide}
             >
               <svg
@@ -101,9 +101,9 @@ export default function GroupOverflowMenu({
             </button>
             {isSynced && (
               <>
-                <div className="mx-2 my-1 border-t border-neutral-700" />
+                <div className="mx-2 my-1 border-t border-border" />
                 <button
-                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-red-400 hover:bg-neutral-700 disabled:opacity-50"
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-danger hover:bg-hover disabled:opacity-50"
                   onClick={handleUnsync}
                   disabled={isSyncing}
                   title={

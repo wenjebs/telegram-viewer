@@ -61,12 +61,12 @@ describe('usePrefetch', () => {
     const mockFn = vi.fn(async () => new Response('', { status: 200 }))
     globalThis.fetch = mockFn as unknown as typeof fetch
 
-    const items = [makeMediaItem()]
+    const initialItems = [makeMediaItem()]
     const { rerender } = renderHook(
       ({ items, enabled }) => usePrefetch(items, enabled),
       {
         wrapper: createWrapper(),
-        initialProps: { items, enabled: true },
+        initialProps: { items: initialItems, enabled: true },
       },
     )
 
@@ -74,7 +74,7 @@ describe('usePrefetch', () => {
     const firstCallCount = mockFn.mock.calls.length
 
     // Rerender with same items
-    rerender({ items, enabled: true })
+    rerender({ items: initialItems, enabled: true })
     await new Promise((r) => setTimeout(r, 50))
 
     // Should not have made additional fetch calls for same items

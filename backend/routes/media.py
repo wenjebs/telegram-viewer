@@ -22,17 +22,20 @@ from database import (
     get_media_by_id,
     get_media_by_ids,
     get_media_count,
+    get_media_ids,
     hide_media_item,
     hide_media_items,
     unhide_media_items,
     get_hidden_media_page,
     get_hidden_count,
+    get_hidden_media_ids,
     favorite_media_item,
     favorite_media_items,
     unfavorite_media_item,
     unfavorite_media_items,
     get_favorites_media_page,
     get_favorites_count,
+    get_favorites_media_ids,
 )
 from deps import get_db, get_tg, get_zip_jobs, get_background_tasks
 from utils import fire_and_forget, parse_cursor, build_media_response
@@ -81,8 +84,6 @@ async def _cache_media(tg, db, item: dict) -> str:
     return str(download_path)
 
 
-
-
 # region List / Download zip
 @router.get("")
 async def list_media(
@@ -94,6 +95,7 @@ async def list_media(
     date_from: str | None = Query(None),
     date_to: str | None = Query(None),
     faces: Literal["none", "solo", "group"] | None = Query(None),
+    sort: Literal["asc", "desc"] = Query("desc"),
 ):
     cursor_id, cursor_value = parse_cursor(cursor)
     group_ids = [int(g) for g in groups.split(",")] if groups else None
@@ -107,6 +109,7 @@ async def list_media(
         date_from=date_from,
         date_to=date_to,
         faces=faces,
+        sort=sort,
     )
     return build_media_response(items, limit, cursor_column="date")
 
@@ -151,8 +154,6 @@ def _build_zip(tmp_path: str, items: list[dict], paths: list[str]) -> None:
 
 def _validate_zip_request(unique_ids: list[int], items: list[dict]) -> None:
     """Shared validation for zip endpoints."""
-    if len(unique_ids) > 200:
-        raise HTTPException(status_code=400, detail="Maximum 200 items per zip")
     if not unique_ids:
         raise HTTPException(status_code=400, detail="No media IDs provided")
     if len(items) != len(unique_ids):
@@ -236,8 +237,11 @@ async def _prepare_zip_job(
 
         async def _cache_one(item: dict) -> tuple[dict, str] | None:
             try:
-                path = await _ensure_cached(tg, item)
+                path = await asyncio.wait_for(_ensure_cached(tg, item), timeout=120)
                 return (item, path)
+            except TimeoutError:
+                logger.warning("Timed out downloading item %s", item["id"])
+                return None
             except Exception:
                 logger.warning("Failed to cache item %s", item["id"])
                 return None
@@ -375,6 +379,7 @@ async def list_hidden_media(
     db: aiosqlite.Connection = Depends(get_db),
     cursor: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
+    sort: Literal["asc", "desc"] = Query("desc"),
 ):
     cursor_id, cursor_value = parse_cursor(cursor)
     items = await get_hidden_media_page(
@@ -382,6 +387,7 @@ async def list_hidden_media(
         cursor_id=cursor_id,
         cursor_value=cursor_value,
         limit=limit,
+        sort=sort,
     )
     return build_media_response(items, limit, cursor_column="hidden_at")
 
@@ -390,6 +396,15 @@ async def list_hidden_media(
 async def hidden_media_count(db: aiosqlite.Connection = Depends(get_db)):
     count = await get_hidden_count(db)
     return {"count": count}
+
+
+@router.get("/hidden/ids")
+async def hidden_media_ids(
+    db: aiosqlite.Connection = Depends(get_db),
+    sort: Literal["asc", "desc"] = Query("desc"),
+):
+    ids = await get_hidden_media_ids(db, sort=sort)
+    return {"ids": ids}
 
 
 @router.post("/unhide-batch")
@@ -433,6 +448,7 @@ async def list_favorites_media(
     db: aiosqlite.Connection = Depends(get_db),
     cursor: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
+    sort: Literal["asc", "desc"] = Query("desc"),
 ):
     cursor_id, cursor_value = parse_cursor(cursor)
     items = await get_favorites_media_page(
@@ -440,6 +456,7 @@ async def list_favorites_media(
         cursor_id=cursor_id,
         cursor_value=cursor_value,
         limit=limit,
+        sort=sort,
     )
     return build_media_response(items, limit, cursor_column="favorited_at")
 
@@ -450,10 +467,57 @@ async def favorites_media_count(db: aiosqlite.Connection = Depends(get_db)):
     return {"count": count}
 
 
+@router.get("/favorites/ids")
+async def favorites_media_ids(
+    db: aiosqlite.Connection = Depends(get_db),
+    sort: Literal["asc", "desc"] = Query("desc"),
+):
+    ids = await get_favorites_media_ids(db, sort=sort)
+    return {"ids": ids}
+
+
 @router.get("/count")
-async def media_count(db: aiosqlite.Connection = Depends(get_db)):
-    count = await get_media_count(db)
+async def media_count(
+    db: aiosqlite.Connection = Depends(get_db),
+    groups: str | None = Query(None),
+    type: str | None = Query(None),
+    date_from: str | None = Query(None),
+    date_to: str | None = Query(None),
+    faces: Literal["none", "solo", "group"] | None = Query(None),
+):
+    group_ids = [int(g) for g in groups.split(",")] if groups else None
+    count = await get_media_count(
+        db,
+        group_ids=group_ids,
+        media_type=type,
+        date_from=date_from,
+        date_to=date_to,
+        faces=faces,
+    )
     return {"count": count}
+
+
+@router.get("/ids")
+async def media_ids(
+    db: aiosqlite.Connection = Depends(get_db),
+    groups: str | None = Query(None),
+    type: str | None = Query(None),
+    date_from: str | None = Query(None),
+    date_to: str | None = Query(None),
+    faces: Literal["none", "solo", "group"] | None = Query(None),
+    sort: Literal["asc", "desc"] = Query("desc"),
+):
+    group_ids = [int(g) for g in groups.split(",")] if groups else None
+    ids = await get_media_ids(
+        db,
+        group_ids=group_ids,
+        media_type=type,
+        date_from=date_from,
+        date_to=date_to,
+        faces=faces,
+        sort=sort,
+    )
+    return {"ids": ids}
 
 
 @router.post("/{media_id}/favorite")
@@ -574,10 +638,12 @@ async def download_media(
             fut = asyncio.get_event_loop().create_future()
             _download_registry[media_id] = fut
             task = fire_and_forget(_cache_media(tg, db, item), bg_tasks)
-            task.add_done_callback(lambda t: (
-                _resolve_future(fut, t),
-                _download_registry.pop(media_id, None),
-            ))
+            task.add_done_callback(
+                lambda t: (
+                    _resolve_future(fut, t),
+                    _download_registry.pop(media_id, None),
+                )
+            )
 
         try:
             download_path = await asyncio.shield(fut)
@@ -620,13 +686,13 @@ async def download_media(
                 # Re-download fully in the background so the file gets cached
                 if media_id not in _download_registry:
                     bg_fut = asyncio.get_event_loop().create_future()
-                    bg_task = fire_and_forget(
-                        _cache_media(tg, db, item), bg_tasks
+                    bg_task = fire_and_forget(_cache_media(tg, db, item), bg_tasks)
+                    bg_task.add_done_callback(
+                        lambda t: (
+                            _resolve_future(bg_fut, t),
+                            _download_registry.pop(media_id, None),
+                        )
                     )
-                    bg_task.add_done_callback(lambda t: (
-                        _resolve_future(bg_fut, t),
-                        _download_registry.pop(media_id, None),
-                    ))
                     _download_registry[media_id] = bg_fut
                 raise
             else:

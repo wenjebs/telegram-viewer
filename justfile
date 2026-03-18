@@ -13,6 +13,8 @@ dev:
       echo "Adding tele.view to /etc/hosts (requires password):"
       sudo sh -c 'echo "127.0.0.1 tele.view" >> /etc/hosts'
     fi
+    # Trust Caddy's local CA (avoids ERR_CERT_COMMON_NAME_INVALID)
+    caddy trust 2>/dev/null || true
     # Caddy needs port 443, may prompt for password on first run
     caddy start --config Caddyfile
     # Then background the rest

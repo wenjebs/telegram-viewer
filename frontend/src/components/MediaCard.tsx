@@ -66,7 +66,7 @@ export default function MediaCard({
       data-item-id={item.id}
       className={`relative aspect-square cursor-pointer overflow-hidden rounded bg-surface-alt transition-all${
         selectMode && selected
-          ? ' ring-2 ring-blue-500 ring-offset-1 ring-offset-base'
+          ? ' ring-2 ring-accent ring-offset-1 ring-offset-base'
           : ''
       }${selectMode && !selected ? ' opacity-60' : ''}`}
       onClick={handleClick}
@@ -97,9 +97,12 @@ export default function MediaCard({
       {/* Select mode checkbox */}
       {selectMode && (
         <div
+          role="checkbox"
+          aria-checked={selected}
+          aria-label="Select item"
           className={`absolute top-2 left-2 flex h-5 w-5 items-center justify-center rounded-full border-2 transition-colors${
             selected
-              ? ' border-blue-500 bg-blue-500 text-white'
+              ? ' border-accent bg-accent text-white'
               : ' border-white/60 bg-black/40'
           }`}
         >

@@ -7,53 +7,85 @@ React 19, TanStack Start/Router (file-based routing), TanStack Query (data fetch
 ## Components
 
 - **AuthFlow** — multi-step auth: phone input → code verification → optional 2FA password
-- **Sidebar** — resizable (200-500px drag handle), chat type filter (All/People/Groups/Channels), fuzzy search via Fuse.js, group checkboxes (sync control) + clickable group names (display filter), sync/clear buttons, sync progress display, total synced items count, hidden/favorites/people view mode buttons with count badges, select mode toggle button. Filters (date range picker, media type, faces) are conditionally hidden when `viewMode !== 'normal'` since they only apply to the normal gallery view
+- **Sidebar** — resizable (200-500px drag handle), reads filter state internally from `useSearchParams()` and width from `useAppStore()`. Calls `useGroups()` and count queries directly (TanStack Query deduplicates). Chat type filter (All/People/Groups/Channels), fuzzy search via Fuse.js, group list with sync control, sync/clear buttons, sync progress display, total synced items count. Filters (date range picker, media type, faces) are conditionally hidden when `viewMode !== 'normal'`. Receives ~9 props (sync handlers, personCount, viewMode) down from ~30.
 - **MediaGrid** — virtualized (via `@tanstack/react-virtual`, date-group level) infinite-scroll grid (auto-fill minmax 160px, gap-3) of media items grouped by date, auto-loads more when scrolled near end, progress bar during sync. Supports select mode with clickable date headers, shift-click range selection, and drag rectangle multi-select.
 - **MediaCard** — thumbnail with lazy loading, video play icon overlay + duration badge (MM:SS), chat name label (bottom-left pill). Select mode: checkbox overlay, blue ring border, long-press/right-click to enter select mode, dimmed unselected items.
 - **DateHeader** — date separator (locale full date string)
 - **DateRangeFilter** — collapsible date range picker using react-day-picker in range mode
 - **Lightbox** — full-screen modal for media viewing, keyboard nav (Esc/arrows/S/H/F), download button, select/favorite/hide/unhide buttons with key hints, caption display, status indicators (selected check + favorite heart), metadata panel (type, sender, chat, date, dimensions, file size)
 - **SelectionBar** — floating bottom pill (fixed position, z-40, slideUp animation). Shows count, select all, deselect, download + favorite (normal view), unhide (hidden view), cancel. Download button shows progress during async zip preparation (files_ready/files_total, then "Building zip..."). Uses `sonner` toasts for error/success feedback instead of inline error state.
-- **PeopleGrid** — grid of person cards showing face crop avatars, display names, and face counts. Click to view person detail.
+- **PeopleGrid** — grid of person cards showing face crop avatars, display names, and face counts. Click to view person detail, cmd+click to enter merge select mode and toggle selection (auto-exits on last deselect), shift+click to inline rename, drag rectangle multi-select for merge.
 - **PersonDetail** — media grid filtered to a specific person's face appearances, with rename and merge actions
 - **PersonMergeModal** — modal for merging two person records, moves all faces from source to target
 - **ShortcutsModal** — keyboard shortcuts reference modal (opened via `?` / shift+slash), lists all app hotkeys grouped by context (General, Lightbox, Selection mode)
 - **KeepPersonPicker** — modal to select which person to keep when merging duplicate persons
 - **GroupOverflowMenu** — overflow menu for group actions (hide, unsync)
 - **ThemeToggle** — theme switcher (light/dark/system) with icon cycling
+- **ViewModeTabs** — tab bar for switching between Gallery, Hidden, Favorites, and People modes with item counts
+- **SegmentedControl** — reusable button group for filter options (media type, chat type, sync status, faces filter)
+- **SettingsPanel** — slide-out panel (lazy-loaded) for theme toggle and backup/restore settings (export/import JSON)
+- **EmptyState** — getting-started guidance (3 steps: pick chats, sync, browse) for initial empty gallery
+- **SkeletonGroup** — animated skeleton loader for media grid showing fake date header and thumbnail grid
+- **ActiveGroupChips** — chip bar showing active syncing groups with click-to-deactivate and "Show all" deselect-all action
+- **ViewModeHeader** — banner for hidden/favorites view modes with icon and close button
+- **PersonBreadcrumb** — selected person name header with back button
+- **MediaToolbar** — item count, select mode toggle, sort order button
+- **PeopleToolbar** — face scan button, similarity threshold input, select/deselect all/close buttons
+- **PersonMergeBar** — fixed bottom bar for person merge select mode with select all/deselect/merge/exit
+
+## State Architecture
+
+| Layer | Tool | What lives here |
+|-------|------|-----------------|
+| Server state | TanStack Query | media, groups, persons, counts, sync status, face scan, hidden dialogs, auth |
+| Client state | Zustand (`appStore`) | sidebarWidth, similarityThreshold, showMergeModal, showShortcuts |
+| URL state | TanStack Router `validateSearch` | viewMode, filters, person, item, sort, q, hiddenDialogs |
 
 ## Hooks
 
-- **useGroups({ enabled, displayGroupIds })** — `useQuery` for group list, optimistic `toggleActive` via `setQueryData`. Accepts external `displayGroupIds: Set<number>` (URL-backed). Fetches `previewCounts` (new media estimates) for active groups via separate `useQuery` (5min staleTime). Computed: activeGroupIds, displayFilteredGroupIds. Returns `{ groups, loading, error, toggleActive, activeGroupIds, displayFilteredGroupIds, refetch, previewCounts }`
-- **useMedia(filters, enabled)** — `useInfiniteQuery` with cursor pagination (limit 50). Query key includes filters (`groups`, `type`, `dateFrom`, `dateTo`, `faces`) so changing filters auto-refetches. Returns `{ items, loading, error, hasMore, fetchNextPage, removeItem, removeItems }`
-- **useHiddenMedia(enabled)** — `useInfiniteQuery` for hidden items, query key `['media', 'hidden']`. Returns `{ items, loading, error, hasMore, fetchNextPage, removeItems }`
-- **useFavoritesMedia(enabled)** — `useInfiniteQuery` for favorites, query key `['media', 'favorites']`. Returns `{ items, loading, error, hasMore, fetchNextPage, removeItems }`
+### Composite hooks (Home decomposition)
+
+- **useHomeData()** — orchestrates all data fetching for the Home route. Calls useSearchParams, useAppStore, useGroups, all media hooks, usePersons, usePersonMedia, useFaceScan, useSelectMode, useSyncStatus, useLightbox, usePersonMerge, usePrefetch. Auth via `useQuery(['auth'])` (retry: false). Hidden dialogs via `useQuery(['hiddenDialogs'], { enabled: showHiddenDialogs })`. Computes activeSource/activeItems/activeLoading/activeHasMore based on viewMode. Returns unified data bag with all query results, computed state, invalidation callbacks, and URL state helpers.
+- **useHomeHandlers(params)** — event handlers extracted from Home: handleClear, handleHideDialog, handleUnhideDialog, handleUnsyncGroup, handleViewModeChange, handleToggleHiddenDialogs. Uses useQueryClient internally for cache invalidation.
+- **useHomeShortcuts(params)** — all keyboard shortcut registrations (escape, shift+slash, p/g/f/h view mode switches, shift+h, shift+d). Reads setShowShortcuts from useAppStore.
+
+### Data hooks
+
+- **useInfiniteMediaQuery(queryKey, queryFn, enabled)** — factory hook extracting the shared infinite query pattern (TanStack Query pagination, pages.flatMap item flattening, optimistic removeItem/removeItems). All four media hooks are thin wrappers over this.
+- **useGroups({ enabled })** — `useQuery` for group list, optimistic `toggleActive` via `setQueryData`. Fetches `previewCounts` (new media estimates) for active groups via separate `useQuery` (5min staleTime). Returns `{ groups, loading, error, toggleActive, unsyncGroup, activeGroupIds, refetch, previewCounts }`
+- **useMedia(filters, enabled)** — thin wrapper over `useInfiniteMediaQuery`. Query key includes filters (`groups`, `type`, `dateFrom`, `dateTo`, `faces`, `sort`) so changing filters auto-refetches. Returns `{ items, loading, error, hasMore, fetchNextPage, removeItem, removeItems }`
+- **useHiddenMedia(enabled, sort)** — thin wrapper over `useInfiniteMediaQuery` for hidden items, query key `['media', 'hidden', { sort }]`. Returns `{ items, loading, error, hasMore, fetchNextPage, removeItem, removeItems }`
+- **useFavoritesMedia(enabled, sort)** — thin wrapper over `useInfiniteMediaQuery` for favorites, query key `['media', 'favorites', { sort }]`. Returns `{ items, loading, error, hasMore, fetchNextPage, removeItem, removeItems }`
+- **usePersonMedia(personId, enabled, sort, faces?)** — thin wrapper over `useInfiniteMediaQuery` for media containing a person's face. Optional `faces` filter (`none`/`solo`/`group`) for filtering by face count. Returns `{ items, loading, error, hasMore, fetchNextPage, removeItem, removeItems }`
+- **usePersons(enabled, similarityThreshold)** — `useQuery` for person list + similar-groups query (enabled when 2+ persons). Returns `{ persons, loading, similarGroups, refetch, invalidate }`
+- **useFaceScan(options)** — `useMutation` for `POST /faces/scan`, `useQuery` polls scan status (`refetchOnMount: 'always'` to detect in-progress scans on navigation). Auto-stops when done/error. Returns `{ scanning, status, startScan }`
+- **useSyncStatus** — triggers sync via `useMutation` (POST `/sync-all`), polls status with TanStack Query `refetchInterval` (2s), auto-stops when all groups reach done/error. Returns `{ syncing, syncStatuses, handleSync }`
+
+### UI hooks
+
 - **useSelectMode** — selection state (active, selectedIds Set, selectedCount, lastClickedId). API: enterSelectMode, exitSelectMode, setSelection, toggle, toggleRange, selectAll, selectDateGroup, deselectAll, isSelected
 - **useDragSelect** — drag rectangle multi-select with pointer capture, auto-scroll near edges, hit-test against `[data-item-id]` elements
-- **useSearchParams** — wraps `Route.useSearch()` + `useNavigate()` to provide `{ search, setSearch }` for URL-backed state. `setSearch(updates, { replace })` strips undefined values to keep URLs clean
-- **useLightbox({ activeItems, selectedItem, setSelectedItem, ... })** — lightbox navigation (prev/next), actions (hide/unhide/favorite/select), keyboard shortcuts. Accepts external `selectedItem` and `setSelectedItem` (URL-backed via `?item=` param)
-- **useSyncStatus** — triggers sync via `useMutation` (POST `/sync-all`), polls status with TanStack Query `refetchInterval` (2s), auto-stops when all groups reach done/error. Uses `data.started` to track only server-confirmed groups. Returns `{ syncing, syncStatuses, handleSync }`
+- **useSearchParams** — wraps `getRouteApi('/').useSearch()` + `useNavigate()` to provide `{ search, setSearch }` for URL-backed state. `setSearch(updates, { replace })` strips undefined values to keep URLs clean. Search schema defined in `src/routes/searchSchema.ts`.
+- **useLightbox({ activeItems, selectedItem, setSelectedItem, ... })** — lightbox navigation (prev/next), actions (hide/unhide/favorite/select). Accepts external `selectedItem` and `setSelectedItem` (URL-backed via `?item=` param)
+- **usePersonMerge(invalidatePersons)** — manages person merge workflow: select mode for picking merge targets, keep-person picker modal, merge execution with optimistic invalidation
 - **useZipDownload** — async zip download with progress. `useMutation` fires `POST /prepare-zip`, `useQuery` polls `/zip-status/{job_id}` every 1s, `useEffect` auto-triggers browser download via `<a>` click when done (no blob buffering). Returns `{ preparing, zipStatus, startDownload }`
-- **useFaceScan(options)** — `useMutation` for `POST /faces/scan`, `useQuery` polls scan status (`refetchOnMount: 'always'` to detect in-progress scans on navigation). Auto-stops when done/error. Returns `{ scanning, status, startScan }`
-- **usePersons(enabled, similarityThreshold)** — `useQuery` for person list + similar-groups query (enabled when 2+ persons). Returns `{ persons, loading, similarGroups, refetch, invalidate }`
-- **usePersonMerge({ persons, selectedPerson, ... })** — manages person merge workflow: select mode for picking merge targets, keep-person picker modal, merge execution with optimistic invalidation
-- **usePersonMedia(personId, enabled)** — `useInfiniteQuery` for media items containing a person's face. Returns `{ items, loading, error, hasMore, fetchNextPage, removeItems }`
 - **useTheme** — theme state management (light/dark/system). Persists to localStorage, applies `data-theme` attribute to `<html>`. Returns `{ theme, setTheme }`
-- **usePrefetch(items, enabled)** — background prefetch of loaded media items (photos + videos). Uses TanStack Query `prefetchQuery` with `staleTime/gcTime: Infinity` for dedup and tracking. Concurrent queue (max 3), LIFO order (newest pages prefetched first via `unshift`), new pages don't abort in-flight downloads, AbortController cleanup on unmount. Warms both backend disk cache and browser HTTP cache so lightbox loads are instant.
+- **useSettingsBackup** — export/import settings JSON with file I/O. Invalidates queries on import. Builds import summary with toast feedback.
+- **usePrefetch(items, enabled)** — background prefetch of loaded media items. TanStack Query `prefetchQuery` with `staleTime/gcTime: Infinity` for dedup. Concurrent queue (max 3), LIFO order, AbortController cleanup on unmount.
 
 ## API Client (`src/api/client.ts`)
 
-Schema-validated fetch wrapper (`fetchJSON(path, schema, init)`) over `/api` prefix (proxied to localhost:8000 via Vite). Every JSON response is validated at runtime via `schema.parse()` (Zod) — no type casting. Shared `ensureOk()` helper for error handling across `fetchJSON` and `downloadZip`. Reusable `SuccessResponse` and `CountResponse` schemas for common response shapes. Sync via `startSyncAll` (POST) + polling `getSyncStatus` every 2s. Download zip via async prepare-poll-download flow (no blob buffering); legacy `downloadZip` kept for compatibility. Hide/unhide/favorite/hidden-list/favorites-list endpoints. Face endpoints: scan control, person CRUD (list, rename, merge, remove face), person media pagination, face crop URLs.
+Schema-validated fetch wrapper (`fetchJSON(path, schema, init)`) over `/api` prefix (proxied to localhost:8000 via Vite). Every JSON response is validated at runtime via `schema.parse()` (Zod) — no type casting. Shared `ensureOk()` helper for error handling across `fetchJSON` and `downloadZip`. Reusable `SuccessResponse` and `CountResponse` schemas for common response shapes. Sync via `startSyncAll` (POST) + polling `getSyncStatus` every 2s. Download zip via async prepare-poll-download flow (no blob buffering); legacy `downloadZip` kept for compatibility. Hide/unhide/favorite/hidden-list/favorites-list endpoints. Face endpoints: scan control, person CRUD (list, rename, merge, remove face), person media pagination (with optional `faces` filter), face crop URLs. Settings endpoints: `exportSettings()` (JSON file download), `importSettings()` (file upload with import summary).
 
 ## Schemas (`src/api/schemas.ts`)
 
-Zod schemas as single source of truth — TypeScript types are inferred via `z.infer<>`. Schemas: AuthStatus, Group, MediaItem (media_type: 'photo'|'video'|'file', hidden_at, favorited_at), MediaPage, SyncStatus (status: 'idle'|'syncing'|'done'|'error'), Person, FaceScanStatus (status: 'idle'|'scanning'|'clustering'|'done'|'error'), ZipJobResponse, ZipStatusResponse (status: 'preparing'|'zipping'|'done'|'error'), PreviewCountItem (photos, videos, documents, total), PreviewCounts (Record<string, PreviewCountItem | null>). Reusable: SuccessResponse, CountResponse.
+Zod schemas as single source of truth — TypeScript types are inferred via `z.infer<>`. Schemas: AuthStatus, Group, MediaItem (media_type: 'photo'|'video'|'file', hidden_at, favorited_at), MediaPage, SyncStatus (status: 'idle'|'syncing'|'done'|'error'), Person, FaceScanStatus (status: 'idle'|'scanning'|'clustering'|'done'|'error'), ZipJobResponse, ZipStatusResponse (status: 'preparing'|'zipping'|'done'|'error'), PreviewCountItem (photos, videos, documents, total), PreviewCounts (Record<string, PreviewCountItem | null>), ImportResult (settings import summary with applied/skipped counts). Reusable: SuccessResponse, CountResponse.
 
 ## Layout
 
 3-column: sidebar (resizable left panel) | media grid (flex-1 scrollable center) | lightbox (fixed z-50 overlay) + selection bar (fixed z-40 bottom) + shortcuts modal (? key). View indicator banner appears above grid on non-normal views (icon + label + close button: "Hidden Media", "Favorites", "People", or person name). Display filter pills bar below banner when active (with "Show all" reset). ViewMode state ('normal'|'hidden'|'favorites'|'people') switches grid content. People view shows PeopleGrid with face scan controls in sidebar.
 
-Root route (`__root.tsx`) wraps app in `QueryClientProvider` (staleTime: 5 min, refetchOnWindowFocus: true) and mounts `<Toaster />` from sonner (theme-aware via useTheme, bottom-right, rich colors). Injects inline script to prevent theme flash on load. Home component manages auth state locally; filter/view/navigation state is URL-driven via TanStack Router `validateSearch` with Zod schema. Data fetching is declarative via TanStack Query hooks — no manual fetch effects.
+Root route (`__root.tsx`) wraps app in `QueryClientProvider` (staleTime: 5 min, refetchOnWindowFocus: true) and mounts `<Toaster />` from sonner (theme-aware via useTheme, bottom-right, rich colors). Injects inline script to prevent theme flash on load. Home component (`src/routes/index.tsx`, ~395 lines) is a thin composition shell that delegates to `useHomeData`, `useHomeHandlers`, `useHomeShortcuts` hooks and extracted sub-components. Auth via `useQuery(['auth'])`, filter/view/navigation state URL-driven via `searchSchema.ts` Zod schema. Data fetching is declarative via TanStack Query hooks — no manual fetch effects.
 
 ## URL Search Params
 
@@ -70,6 +102,8 @@ Route `/` uses `validateSearch` with a Zod schema. All params are optional with 
 | `from` | string | YYYY-MM-DD | Date range start |
 | `to` | string | YYYY-MM-DD | Date range end |
 | `groups` | string | comma-separated IDs | Display filter (e.g. "1,2,3") |
+| `sort` | enum | asc, desc | Sort order (default desc = newest first) |
+| `sync` | enum | synced, unsynced | Sync status filter |
 | `q` | string | any | Sidebar search query (debounced 300ms) |
 | `hiddenDialogs` | literal | "1" | Show hidden dialogs toggle |
 
@@ -77,7 +111,7 @@ History behavior: `mode`/`person`/`item` open use push (back button navigates); 
 
 ## Key Dependencies
 
-@tanstack/react-query (data fetching), @tanstack/react-virtual (virtualized lists), zod (runtime schema validation), fuse.js (fuzzy search), react-day-picker (date ranges), react-hotkeys-hook (keyboard shortcuts), use-long-press (long-press gesture), lucide-react (icons), sonner (toast notifications), @tanstack/react-start + router, tailwindcss v4
+@tanstack/react-query (data fetching), @tanstack/react-virtual (virtualized lists), zustand (client state), zod (runtime schema validation), fuse.js (fuzzy search), react-day-picker (date ranges), react-hotkeys-hook (keyboard shortcuts), use-long-press (long-press gesture), lucide-react (icons), sonner (toast notifications), @tanstack/react-start + router, tailwindcss v4
 
 ## Tooling
 

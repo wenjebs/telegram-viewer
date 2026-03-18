@@ -3,7 +3,7 @@ import { formatDateLong } from '#/utils/format'
 export default function DateHeader({ date }: { date: string }) {
   const formatted = formatDateLong(date)
   return (
-    <h3 className="pb-1 text-xs font-semibold uppercase tracking-wide text-neutral-400">
+    <h3 className="pb-1 text-xs font-semibold uppercase tracking-wide text-text-soft">
       {formatted}
     </h3>
   )
