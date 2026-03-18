@@ -242,11 +242,11 @@ async def scan_faces(db, tg, force_rescan: bool = False) -> None:
 async def cluster_faces(db) -> None:
     """Cluster face embeddings using DBSCAN and assign persons."""
     # Purge low-confidence faces from prior scans (before filtering was added)
-    purge_cursor = await db.execute(
+    async with await db.execute(
         "SELECT id, crop_path FROM faces WHERE confidence < ? AND crop_path IS NOT NULL",
         (MIN_CONFIDENCE,),
-    )
-    purge_rows = await purge_cursor.fetchall()
+    ) as purge_cursor:
+        purge_rows = await purge_cursor.fetchall()
     if purge_rows:
         for row in purge_rows:
             crop = Path(row["crop_path"])
@@ -280,8 +280,8 @@ async def cluster_faces(db) -> None:
     await clear_person_assignments(db)
 
     # Get confidence scores for picking representatives
-    confidence_cursor = await db.execute("SELECT id, confidence FROM faces")
-    conf_rows = await confidence_cursor.fetchall()
+    async with await db.execute("SELECT id, confidence FROM faces") as confidence_cursor:
+        conf_rows = await confidence_cursor.fetchall()
     conf_map = {r[0]: r[1] for r in conf_rows}
 
     # Build clusters

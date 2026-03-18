@@ -1,3 +1,4 @@
+import asyncio
 import pytest
 from database import (
     insert_media_item,
@@ -1172,3 +1173,54 @@ async def test_unhide_dialogs_empty_list(db):
 async def test_mark_media_scanned_empty(db):
     """Empty list should be a no-op."""
     await mark_media_scanned(db, [])
+
+
+@pytest.mark.asyncio
+async def test_get_media_by_id_explicitly_closes_cursor(db):
+    """Regression: get_media_by_id must explicitly close its cursor via async with.
+
+    Production failure: db is a singleton shared across all requests. The
+    download_media route calls get_media_by_id, then _stream_video (an async
+    generator that runs for seconds while streaming) eventually calls db.commit().
+    If get_media_by_id leaves a cursor open on the worker thread, SQLite raises
+    'cannot commit transaction - SQL statements in progress'.
+
+    We verify the fix by spying on the cursor returned by db.execute:
+    the cursor's close() method must be called before get_media_by_id returns.
+    """
+    from unittest.mock import AsyncMock, patch
+    import aiosqlite
+
+    item = make_media_item(message_id=999, chat_id=1, chat_name="G", date="2026-01-01T00:00:00")
+    await insert_media_item(db, item)
+    await db.commit()
+
+    async with await db.execute("SELECT id FROM media_items WHERE message_id = ?", (999,)) as cur:
+        row = await cur.fetchone()
+    media_id = row[0]
+
+    close_called = []
+
+    original_execute = db.execute
+
+    async def spying_execute(sql, *args, **kwargs):
+        cursor = await original_execute(sql, *args, **kwargs)
+        original_close = cursor.close
+
+        async def tracked_close():
+            close_called.append(True)
+            return await original_close()
+
+        cursor.close = tracked_close
+        return cursor
+
+    with patch.object(db, "execute", side_effect=spying_execute):
+        result = await get_media_by_id(db, media_id)
+
+    assert result is not None
+    assert result["message_id"] == 999
+    assert close_called, (
+        "get_media_by_id did not call cursor.close() — "
+        "this leaves the aiosqlite cursor open in the worker thread, "
+        "which can block db.commit() in _stream_video on the shared connection"
+    )

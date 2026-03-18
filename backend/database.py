@@ -114,16 +114,16 @@ CREATE TABLE IF NOT EXISTS face_scan_state (
 async def _migrate_to_autoincrement(db: aiosqlite.Connection) -> None:
     """Recreate media_items and faces with AUTOINCREMENT to prevent ID reuse."""
     # Check if migration is needed (sqlite_sequence exists only with AUTOINCREMENT)
-    cursor = await db.execute(
+    async with await db.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='sqlite_sequence'"
-    )
-    has_sequence = await cursor.fetchone()
+    ) as cursor:
+        has_sequence = await cursor.fetchone()
     if has_sequence:
-        cursor = await db.execute(
+        async with await db.execute(
             "SELECT name FROM sqlite_sequence WHERE name='media_items'"
-        )
-        if await cursor.fetchone():
-            return  # Already migrated
+        ) as cursor:
+            if await cursor.fetchone():
+                return  # Already migrated
 
     # Run both table migrations in a single transaction so a crash
     # can't leave the DB partially migrated.
@@ -300,8 +300,8 @@ async def _paginate_media(
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     query = f"SELECT * FROM media_items {where} ORDER BY {order_by} LIMIT :limit"
 
-    cursor = await db.execute(query, params)
-    rows = await cursor.fetchall()
+    async with await db.execute(query, params) as cursor:
+        rows = await cursor.fetchall()
     return [dict(row) for row in rows]
 
 
@@ -391,14 +391,14 @@ async def upsert_sync_state(
 
 
 async def get_sync_state(db: aiosqlite.Connection, chat_id: int) -> dict | None:
-    cursor = await db.execute("SELECT * FROM sync_state WHERE chat_id = ?", (chat_id,))
-    row = await cursor.fetchone()
+    async with await db.execute("SELECT * FROM sync_state WHERE chat_id = ?", (chat_id,)) as cursor:
+        row = await cursor.fetchone()
     return dict(row) if row else None
 
 
 async def get_all_sync_states(db: aiosqlite.Connection) -> list[dict]:
-    cursor = await db.execute("SELECT * FROM sync_state ORDER BY chat_name")
-    rows = await cursor.fetchall()
+    async with await db.execute("SELECT * FROM sync_state ORDER BY chat_name") as cursor:
+        rows = await cursor.fetchall()
     return [dict(row) for row in rows]
 
 
@@ -429,20 +429,20 @@ async def clear_chat_media(db: aiosqlite.Connection, chat_id: int) -> list[str]:
     Returns cached file paths (thumbnails, downloads, face crops) for cleanup.
     """
     # Collect file paths for cleanup
-    cursor = await db.execute(
+    async with await db.execute(
         "SELECT thumbnail_path, download_path FROM media_items "
         "WHERE chat_id = ? AND (thumbnail_path IS NOT NULL OR download_path IS NOT NULL)",
         (chat_id,),
-    )
-    rows = await cursor.fetchall()
+    ) as cursor:
+        rows = await cursor.fetchall()
     paths = [p for row in rows for p in (row[0], row[1]) if p]
 
-    cursor = await db.execute(
+    async with await db.execute(
         "SELECT crop_path FROM faces WHERE media_id IN "
         "(SELECT id FROM media_items WHERE chat_id = ?) AND crop_path IS NOT NULL",
         (chat_id,),
-    )
-    paths += [row[0] for row in await cursor.fetchall()]
+    ) as cursor:
+        paths += [row[0] for row in await cursor.fetchall()]
 
     # Delete orphaned persons (all their faces belong to this chat)
     await db.execute(
@@ -481,15 +481,15 @@ async def clear_all_media(db: aiosqlite.Connection) -> list[str]:
 
     Returns cached file paths (thumbnails, downloads, face crops) for cleanup.
     """
-    cursor = await db.execute(
+    async with await db.execute(
         "SELECT thumbnail_path, download_path FROM media_items "
         "WHERE thumbnail_path IS NOT NULL OR download_path IS NOT NULL"
-    )
-    rows = await cursor.fetchall()
+    ) as cursor:
+        rows = await cursor.fetchall()
     paths = [p for row in rows for p in (row[0], row[1]) if p]
 
-    cursor = await db.execute("SELECT crop_path FROM faces WHERE crop_path IS NOT NULL")
-    paths += [row[0] for row in await cursor.fetchall()]
+    async with await db.execute("SELECT crop_path FROM faces WHERE crop_path IS NOT NULL") as cursor:
+        paths += [row[0] for row in await cursor.fetchall()]
 
     await db.execute("DELETE FROM faces")
     await db.execute("DELETE FROM persons")
@@ -514,16 +514,16 @@ async def get_media_by_ids(
     if not media_ids:
         return []
     placeholders = ", ".join("?" for _ in media_ids)
-    cursor = await db.execute(
+    async with await db.execute(
         f"SELECT * FROM media_items WHERE id IN ({placeholders})", media_ids
-    )
-    rows = await cursor.fetchall()
+    ) as cursor:
+        rows = await cursor.fetchall()
     return [dict(row) for row in rows]
 
 
 async def get_media_by_id(db: aiosqlite.Connection, media_id: int) -> dict | None:
-    cursor = await db.execute("SELECT * FROM media_items WHERE id = ?", (media_id,))
-    row = await cursor.fetchone()
+    async with await db.execute("SELECT * FROM media_items WHERE id = ?", (media_id,)) as cursor:
+        row = await cursor.fetchone()
     return dict(row) if row else None
 
 
@@ -607,10 +607,10 @@ async def get_hidden_media_page(
 
 
 async def get_hidden_count(db: aiosqlite.Connection) -> int:
-    cursor = await db.execute(
+    async with await db.execute(
         "SELECT COUNT(*) FROM media_items WHERE hidden_at IS NOT NULL"
-    )
-    row = await cursor.fetchone()
+    ) as cursor:
+        row = await cursor.fetchone()
     return row[0] if row else 0
 
 
@@ -638,18 +638,18 @@ async def unhide_dialogs(db: aiosqlite.Connection, dialog_ids: list[int]) -> Non
 
 
 async def get_hidden_dialogs(db: aiosqlite.Connection) -> list[dict]:
-    cursor = await db.execute(
+    async with await db.execute(
         "SELECT * FROM dialogs WHERE hidden_at IS NOT NULL ORDER BY hidden_at DESC"
-    )
-    rows = await cursor.fetchall()
+    ) as cursor:
+        rows = await cursor.fetchall()
     return [dict(row) for row in rows]
 
 
 async def get_hidden_dialog_count(db: aiosqlite.Connection) -> int:
-    cursor = await db.execute(
+    async with await db.execute(
         "SELECT COUNT(*) FROM dialogs WHERE hidden_at IS NOT NULL"
-    )
-    row = await cursor.fetchone()
+    ) as cursor:
+        row = await cursor.fetchone()
     return row[0] if row else 0
 
 
@@ -658,10 +658,10 @@ async def get_hidden_media_ids(
     sort: str = "desc",
 ) -> list[int]:
     sd = sort.upper()
-    cursor = await db.execute(
+    async with await db.execute(
         f"SELECT id FROM media_items WHERE hidden_at IS NOT NULL ORDER BY hidden_at {sd}, id {sd}"
-    )
-    rows = await cursor.fetchall()
+    ) as cursor:
+        rows = await cursor.fetchall()
     return [row[0] for row in rows]
 
 
@@ -707,10 +707,10 @@ async def get_favorites_media_page(
 
 
 async def get_favorites_count(db: aiosqlite.Connection) -> int:
-    cursor = await db.execute(
+    async with await db.execute(
         "SELECT COUNT(*) FROM media_items WHERE favorited_at IS NOT NULL"
-    )
-    row = await cursor.fetchone()
+    ) as cursor:
+        row = await cursor.fetchone()
     return row[0] if row else 0
 
 
@@ -719,10 +719,10 @@ async def get_favorites_media_ids(
     sort: str = "desc",
 ) -> list[int]:
     sd = sort.upper()
-    cursor = await db.execute(
+    async with await db.execute(
         f"SELECT id FROM media_items WHERE favorited_at IS NOT NULL ORDER BY favorited_at {sd}, id {sd}"
-    )
-    rows = await cursor.fetchall()
+    ) as cursor:
+        rows = await cursor.fetchall()
     return [row[0] for row in rows]
 
 
@@ -764,10 +764,10 @@ async def get_media_count(
     _apply_faces_filter(conditions, faces)
 
     where = " AND ".join(conditions)
-    cursor = await db.execute(
+    async with await db.execute(
         f"SELECT COUNT(*) FROM media_items WHERE {where}", params
-    )
-    row = await cursor.fetchone()
+    ) as cursor:
+        row = await cursor.fetchone()
     return row[0] if row else 0
 
 
@@ -811,21 +811,21 @@ async def get_media_ids(
 
     where = " AND ".join(conditions)
     sd = sort.upper()
-    cursor = await db.execute(
+    async with await db.execute(
         f"SELECT id FROM media_items WHERE {where} ORDER BY date {sd}, id {sd}",
         params,
-    )
-    rows = await cursor.fetchall()
+    ) as cursor:
+        rows = await cursor.fetchall()
     return [row[0] for row in rows]
 
 
 async def get_media_counts_by_chat(db: aiosqlite.Connection) -> dict[int, int]:
-    cursor = await db.execute(
+    async with await db.execute(
         "SELECT chat_id, COUNT(*) FROM media_items"
         " WHERE hidden_at IS NULL"
         " GROUP BY chat_id"
-    )
-    rows = await cursor.fetchall()
+    ) as cursor:
+        rows = await cursor.fetchall()
     return {row[0]: row[1] for row in rows}
 
 
@@ -865,12 +865,12 @@ async def upsert_dialogs_batch(db: aiosqlite.Connection, dialogs: list[dict]) ->
 
 async def get_all_dialogs(db: aiosqlite.Connection) -> list[dict]:
     """Fetch visible dialogs that have messages, ordered by most recent message first."""
-    cursor = await db.execute(
+    async with await db.execute(
         "SELECT * FROM dialogs WHERE last_message_date IS NOT NULL "
         "AND hidden_at IS NULL "
         "ORDER BY last_message_date DESC"
-    )
-    rows = await cursor.fetchall()
+    ) as cursor:
+        rows = await cursor.fetchall()
     return [dict(row) for row in rows]
 
 
@@ -882,30 +882,30 @@ async def get_all_dialogs(db: aiosqlite.Connection) -> list[dict]:
 
 async def get_unscanned_photos(db: aiosqlite.Connection, limit: int = 50) -> list[dict]:
     """Photos not yet scanned for faces, prioritizing those with cached thumbnails."""
-    cursor = await db.execute(
+    async with await db.execute(
         """SELECT * FROM media_items
            WHERE media_type = 'photo' AND faces_scanned = 0
            ORDER BY thumbnail_path IS NOT NULL DESC, id DESC
            LIMIT ?""",
         (limit,),
-    )
-    rows = await cursor.fetchall()
+    ) as cursor:
+        rows = await cursor.fetchall()
     return [dict(r) for r in rows]
 
 
 async def get_unscanned_photo_count(db: aiosqlite.Connection) -> int:
-    cursor = await db.execute(
+    async with await db.execute(
         "SELECT COUNT(*) FROM media_items WHERE media_type = 'photo' AND faces_scanned = 0"
-    )
-    row = await cursor.fetchone()
+    ) as cursor:
+        row = await cursor.fetchone()
     return row[0] if row else 0
 
 
 async def get_total_photo_count(db: aiosqlite.Connection) -> int:
-    cursor = await db.execute(
+    async with await db.execute(
         "SELECT COUNT(*) FROM media_items WHERE media_type = 'photo'"
-    )
-    row = await cursor.fetchone()
+    ) as cursor:
+        row = await cursor.fetchone()
     return row[0] if row else 0
 
 
@@ -925,8 +925,8 @@ async def insert_faces_batch(db: aiosqlite.Connection, faces: list[dict]) -> lis
         for face in chunk:
             params.extend(face[k] for k in keys)
         sql = f"INSERT INTO faces ({cols}) VALUES {', '.join(single for _ in chunk)} RETURNING id"
-        cursor = await db.execute(sql, params)
-        rows = await cursor.fetchall()
+        async with await db.execute(sql, params) as cursor:
+            rows = await cursor.fetchall()
         all_ids.extend(row[0] for row in rows)
     return all_ids
 
@@ -954,8 +954,8 @@ async def mark_media_scanned(
 
 async def get_all_face_embeddings(db: aiosqlite.Connection) -> list[dict]:
     # Threshold must match MIN_CONFIDENCE in face_scanner.py
-    cursor = await db.execute("SELECT id, embedding FROM faces WHERE confidence >= 0.5")
-    rows = await cursor.fetchall()
+    async with await db.execute("SELECT id, embedding FROM faces WHERE confidence >= 0.5") as cursor:
+        rows = await cursor.fetchall()
     return [dict(r) for r in rows]
 
 
@@ -985,13 +985,13 @@ async def bulk_assign_persons(db: aiosqlite.Connection, clusters: list[dict]) ->
 
 
 async def get_all_persons(db: aiosqlite.Connection) -> list[dict]:
-    cursor = await db.execute(
+    async with await db.execute(
         """SELECT p.*, f.crop_path as avatar_crop_path
            FROM persons p
            LEFT JOIN faces f ON f.id = p.representative_face_id
            ORDER BY p.face_count DESC"""
-    )
-    rows = await cursor.fetchall()
+    ) as cursor:
+        rows = await cursor.fetchall()
     result = []
     for r in rows:
         d = dict(r)
@@ -1001,14 +1001,14 @@ async def get_all_persons(db: aiosqlite.Connection) -> list[dict]:
 
 
 async def get_person(db: aiosqlite.Connection, person_id: int) -> dict | None:
-    cursor = await db.execute(
+    async with await db.execute(
         """SELECT p.*, f.crop_path as avatar_crop_path
            FROM persons p
            LEFT JOIN faces f ON f.id = p.representative_face_id
            WHERE p.id = ?""",
         (person_id,),
-    )
-    row = await cursor.fetchone()
+    ) as cursor:
+        row = await cursor.fetchone()
     if not row:
         return None
     d = dict(row)
@@ -1031,10 +1031,10 @@ async def merge_persons(db: aiosqlite.Connection, keep_id: int, merge_id: int) -
         "UPDATE faces SET person_id = ? WHERE person_id = ?",
         (keep_id, merge_id),
     )
-    cursor = await db.execute(
+    async with await db.execute(
         "SELECT COUNT(*) FROM faces WHERE person_id = ?", (keep_id,)
-    )
-    row = await cursor.fetchone()
+    ) as cursor:
+        row = await cursor.fetchone()
     now = utc_now_iso()
     await db.execute(
         "UPDATE persons SET face_count = ?, updated_at = ? WHERE id = ?",
@@ -1057,10 +1057,10 @@ async def merge_persons_batch(
         f"UPDATE faces SET person_id = ? WHERE person_id IN ({placeholders})",
         [keep_id, *merge_ids],
     )
-    cursor = await db.execute(
+    async with await db.execute(
         "SELECT COUNT(*) FROM faces WHERE person_id = ?", (keep_id,)
-    )
-    row = await cursor.fetchone()
+    ) as cursor:
+        row = await cursor.fetchone()
     now = utc_now_iso()
     await db.execute(
         "UPDATE persons SET face_count = ?, updated_at = ? WHERE id = ?",
@@ -1074,8 +1074,8 @@ async def merge_persons_batch(
 
 async def remove_face_from_person(db: aiosqlite.Connection, face_id: int) -> None:
     """Unassign a face from its person, update counts."""
-    cursor = await db.execute("SELECT person_id FROM faces WHERE id = ?", (face_id,))
-    row = await cursor.fetchone()
+    async with await db.execute("SELECT person_id FROM faces WHERE id = ?", (face_id,)) as cursor:
+        row = await cursor.fetchone()
     if not row or not row[0]:
         return
     person_id = row[0]
@@ -1138,17 +1138,17 @@ async def get_person_media_ids(
 
     where = " AND ".join(conditions)
     sd = sort.upper()
-    cursor = await db.execute(
+    async with await db.execute(
         f"SELECT id FROM media_items WHERE {where} ORDER BY date {sd}, id {sd}",
         params,
-    )
-    rows = await cursor.fetchall()
+    ) as cursor:
+        rows = await cursor.fetchall()
     return [row[0] for row in rows]
 
 
 async def get_face_scan_state(db: aiosqlite.Connection) -> dict:
-    cursor = await db.execute("SELECT * FROM face_scan_state WHERE id = 1")
-    row = await cursor.fetchone()
+    async with await db.execute("SELECT * FROM face_scan_state WHERE id = 1") as cursor:
+        row = await cursor.fetchone()
     if not row:
         return {"status": "idle", "scanned_count": 0, "total_count": 0}
     return dict(row)
@@ -1169,8 +1169,8 @@ async def update_face_scan_state(db: aiosqlite.Connection, **kwargs) -> None:
     invalid = set(kwargs.keys()) - _SCAN_STATE_FIELDS
     if invalid:
         raise ValueError(f"Invalid face_scan_state fields: {invalid}")
-    cursor = await db.execute("SELECT id FROM face_scan_state WHERE id = 1")
-    row = await cursor.fetchone()
+    async with await db.execute("SELECT id FROM face_scan_state WHERE id = 1") as cursor:
+        row = await cursor.fetchone()
     now = utc_now_iso()
     if not row:
         await db.execute(
@@ -1189,19 +1189,19 @@ async def update_face_scan_state(db: aiosqlite.Connection, **kwargs) -> None:
 
 async def get_person_embeddings(db: aiosqlite.Connection) -> list[dict]:
     """Fetch representative face embedding for each person."""
-    cursor = await db.execute(
+    async with await db.execute(
         """SELECT p.id as person_id, f.embedding
            FROM persons p
            JOIN faces f ON f.id = p.representative_face_id
            WHERE p.representative_face_id IS NOT NULL"""
-    )
-    rows = await cursor.fetchall()
+    ) as cursor:
+        rows = await cursor.fetchall()
     return [dict(r) for r in rows]
 
 
 async def get_person_count(db: aiosqlite.Connection) -> int:
-    cursor = await db.execute("SELECT COUNT(*) FROM persons")
-    row = await cursor.fetchone()
+    async with await db.execute("SELECT COUNT(*) FROM persons") as cursor:
+        row = await cursor.fetchone()
     return row[0] if row else 0
 
 
@@ -1257,7 +1257,8 @@ async def import_settings(db: aiosqlite.Connection, data: dict) -> dict:
     skipped = {"unknown_ids": 0, "already_set": 0}
 
     for item in data.get("hidden_groups", []):
-        row = await (await db.execute("SELECT hidden_at FROM dialogs WHERE id = ?", [item["chat_id"]])).fetchone()
+        async with await db.execute("SELECT hidden_at FROM dialogs WHERE id = ?", [item["chat_id"]]) as cursor:
+            row = await cursor.fetchone()
         if not row:
             skipped["unknown_ids"] += 1
         elif row["hidden_at"]:
@@ -1267,7 +1268,8 @@ async def import_settings(db: aiosqlite.Connection, data: dict) -> dict:
             applied["hidden_groups"] += 1
 
     for item in data.get("inactive_groups", []):
-        row = await (await db.execute("SELECT active FROM sync_state WHERE chat_id = ?", [item["chat_id"]])).fetchone()
+        async with await db.execute("SELECT active FROM sync_state WHERE chat_id = ?", [item["chat_id"]]) as cursor:
+            row = await cursor.fetchone()
         if not row:
             skipped["unknown_ids"] += 1
         elif row["active"] == 0:
@@ -1277,10 +1279,11 @@ async def import_settings(db: aiosqlite.Connection, data: dict) -> dict:
             applied["inactive_groups"] += 1
 
     for item in data.get("hidden_media", []):
-        row = await (await db.execute(
+        async with await db.execute(
             "SELECT hidden_at FROM media_items WHERE message_id = ? AND chat_id = ?",
             [item["message_id"], item["chat_id"]],
-        )).fetchone()
+        ) as cursor:
+            row = await cursor.fetchone()
         if not row:
             skipped["unknown_ids"] += 1
         elif row["hidden_at"]:
@@ -1293,10 +1296,11 @@ async def import_settings(db: aiosqlite.Connection, data: dict) -> dict:
             applied["hidden_media"] += 1
 
     for item in data.get("favorited_media", []):
-        row = await (await db.execute(
+        async with await db.execute(
             "SELECT favorited_at FROM media_items WHERE message_id = ? AND chat_id = ?",
             [item["message_id"], item["chat_id"]],
-        )).fetchone()
+        ) as cursor:
+            row = await cursor.fetchone()
         if not row:
             skipped["unknown_ids"] += 1
         elif row["favorited_at"]:
@@ -1309,7 +1313,8 @@ async def import_settings(db: aiosqlite.Connection, data: dict) -> dict:
             applied["favorited_media"] += 1
 
     for item in data.get("person_names", []):
-        row = await (await db.execute("SELECT name FROM persons WHERE id = ?", [item["person_id"]])).fetchone()
+        async with await db.execute("SELECT name FROM persons WHERE id = ?", [item["person_id"]]) as cursor:
+            row = await cursor.fetchone()
         if not row:
             skipped["unknown_ids"] += 1
         elif row["name"]:
