@@ -15,12 +15,8 @@ export default function LightboxMedia({ item }: Props) {
   const isVideo = item.media_type === 'video'
   const thumbnailUrl = getThumbnailUrl(item.id, item.date)
   const downloadUrl = getDownloadUrl(item.id, item.date)
-  const aspectRatioValue =
-    item.width && item.height ? item.width / item.height : 4 / 3
   const aspectRatio =
-    item.width && item.height
-      ? `${item.width} / ${item.height}`
-      : `${aspectRatioValue.toFixed(3)} / 1`
+    item.width && item.height ? `${item.width} / ${item.height}` : '4 / 3'
 
   const showSkeleton = !thumbLoaded && !fullLoaded
   const showIndicator = thumbLoaded && !fullLoaded && !error

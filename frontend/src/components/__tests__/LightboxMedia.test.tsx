@@ -39,7 +39,7 @@ describe('LightboxMedia', () => {
         '[data-testid="lightbox-skeleton"]',
       )
       const style = skeleton?.getAttribute('style')
-      expect(style).toContain('1.333')
+      expect(style).toContain('4 / 3')
     })
   })
 
@@ -82,7 +82,7 @@ describe('LightboxMedia', () => {
     it('renders full-res img with opacity 0 initially', () => {
       const item = makeMediaItem()
       const { container } = render(<LightboxMedia item={item} />)
-      const fullImg = container.querySelector(
+      const fullImg = container.querySelector<HTMLImageElement>(
         'img[data-testid="lightbox-full"]',
       )
       expect(fullImg).toBeTruthy()
@@ -92,7 +92,7 @@ describe('LightboxMedia', () => {
     it('sets full-res opacity to 1 after onLoad fires', () => {
       const item = makeMediaItem()
       const { container } = render(<LightboxMedia item={item} />)
-      const fullImg = container.querySelector(
+      const fullImg = container.querySelector<HTMLImageElement>(
         'img[data-testid="lightbox-full"]',
       )
       fireEvent.load(fullImg!)
@@ -141,7 +141,7 @@ describe('LightboxMedia', () => {
     it('crossfades video in on onLoadedData', () => {
       const item = makeMediaItem({ media_type: 'video' })
       const { container } = render(<LightboxMedia item={item} />)
-      const video = container.querySelector(
+      const video = container.querySelector<HTMLVideoElement>(
         'video[data-testid="lightbox-full-video"]',
       )
       expect(video?.style.opacity).toBe('0')
