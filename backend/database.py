@@ -1091,6 +1091,52 @@ async def remove_face_from_person(db: aiosqlite.Connection, face_id: int) -> Non
     await db.commit()
 
 
+async def delete_person(db: aiosqlite.Connection, person_id: int) -> list[str]:
+    """Delete a person and all associated face data. Returns crop paths for cleanup.
+
+    Photos (media_items) are NOT deleted — only face linkage is removed.
+    """
+    # Check person exists
+    async with await db.execute(
+        "SELECT id FROM persons WHERE id = ?", (person_id,)
+    ) as cursor:
+        if not await cursor.fetchone():
+            return []
+
+    # Collect crop paths before deleting
+    async with await db.execute(
+        "SELECT crop_path FROM faces WHERE person_id = ? AND crop_path IS NOT NULL",
+        (person_id,),
+    ) as cursor:
+        crop_paths = [row[0] for row in await cursor.fetchall()]
+
+    # Collect affected media IDs
+    async with await db.execute(
+        "SELECT DISTINCT media_id FROM faces WHERE person_id = ?",
+        (person_id,),
+    ) as cursor:
+        media_ids = [row[0] for row in await cursor.fetchall()]
+
+    # Delete faces
+    await db.execute("DELETE FROM faces WHERE person_id = ?", (person_id,))
+
+    # Recount face_count for affected media
+    if media_ids:
+        placeholders = ", ".join("?" for _ in media_ids)
+        await db.execute(
+            f"""UPDATE media_items SET face_count = (
+                SELECT COUNT(*) FROM faces WHERE media_id = media_items.id
+            ) WHERE id IN ({placeholders})""",
+            media_ids,
+        )
+
+    # Delete person
+    await db.execute("DELETE FROM persons WHERE id = ?", (person_id,))
+    await db.commit()
+
+    return crop_paths
+
+
 async def get_person_media_page(
     db: aiosqlite.Connection,
     person_id: int,

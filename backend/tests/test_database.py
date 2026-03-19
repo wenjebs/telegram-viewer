@@ -1224,3 +1224,79 @@ async def test_get_media_by_id_explicitly_closes_cursor(db):
         "this leaves the aiosqlite cursor open in the worker thread, "
         "which can block db.commit() in _stream_video on the shared connection"
     )
+
+
+# ---------------------------------------------------------------------------
+# delete_person tests
+# ---------------------------------------------------------------------------
+
+from database import delete_person  # noqa: E402
+import numpy as np  # noqa: E402
+
+
+def _make_embedding():
+    return np.random.default_rng(42).standard_normal(512).astype(np.float32).tobytes()
+
+
+async def _seed_person_with_media(db, media_id=1, face_count=2, name=None):
+    """Insert a person with faces linked to a media item. Returns person_id."""
+    now = utc_now_iso()
+    face_rows = [
+        {
+            "media_id": media_id,
+            "embedding": _make_embedding(),
+            "bbox_x": 0.1, "bbox_y": 0.1, "bbox_w": 0.2, "bbox_h": 0.2,
+            "confidence": 0.9,
+            "crop_path": f"/tmp/face_{media_id}_{i}.jpg",
+            "created_at": now,
+        }
+        for i in range(face_count)
+    ]
+    face_ids = await insert_faces_batch(db, face_rows)
+    clusters = [{"face_ids": face_ids, "representative_face_id": face_ids[0]}]
+    await bulk_assign_persons(db, clusters)
+    await db.commit()
+    cursor = await db.execute("SELECT person_id FROM faces WHERE id = ?", (face_ids[0],))
+    row = await cursor.fetchone()
+    person_id = row[0]
+    if name:
+        await db.execute("UPDATE persons SET name = ? WHERE id = ?", (name, person_id))
+        await db.commit()
+    return person_id
+
+
+class TestDeletePerson:
+    async def test_deletes_person_and_faces(self, db):
+        """Person row and all face rows are removed."""
+        from helpers import make_media_item
+        from database import insert_media_item
+
+        await insert_media_item(db, make_media_item(message_id=1, chat_id=1, chat_name="G"))
+        person_id = await _seed_person_with_media(db, media_id=1, face_count=3)
+
+        crop_paths = await delete_person(db, person_id)
+
+        assert await get_person(db, person_id) is None
+        cursor = await db.execute("SELECT COUNT(*) FROM faces WHERE person_id = ?", (person_id,))
+        assert (await cursor.fetchone())[0] == 0
+        assert len(crop_paths) == 3
+
+    async def test_recounts_media_face_count(self, db):
+        """media_items.face_count is recounted after faces are deleted."""
+        from helpers import make_media_item
+        from database import insert_media_item
+
+        await insert_media_item(db, make_media_item(message_id=1, chat_id=1, chat_name="G"))
+        p1 = await _seed_person_with_media(db, media_id=1, face_count=2)
+        await _seed_person_with_media(db, media_id=1, face_count=1)
+
+        await delete_person(db, p1)
+
+        cursor = await db.execute("SELECT face_count FROM media_items WHERE id = 1")
+        row = await cursor.fetchone()
+        assert row[0] == 1
+
+    async def test_returns_empty_for_nonexistent(self, db):
+        """Deleting a nonexistent person returns empty list."""
+        result = await delete_person(db, 99999)
+        assert result == []
