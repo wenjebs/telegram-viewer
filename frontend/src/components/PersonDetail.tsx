@@ -8,6 +8,7 @@ interface Props {
   onBack: () => void
   onRename: (name: string) => void
   onMerge: () => void
+  onDelete: () => void
 }
 
 export default function PersonDetail({
@@ -15,9 +16,11 @@ export default function PersonDetail({
   onBack,
   onRename,
   onMerge,
+  onDelete,
 }: Props) {
   const [editing, setEditing] = useState(false)
   const [nameInput, setNameInput] = useState(person.display_name)
+  const [showConfirm, setShowConfirm] = useState(false)
 
   const save = () => {
     const trimmed = nameInput.trim()
@@ -88,6 +91,40 @@ export default function PersonDetail({
       >
         Merge...
       </button>
+      <button
+        className="rounded px-2 py-1 text-xs text-text-soft hover:bg-hover hover:text-danger"
+        onClick={() => setShowConfirm(true)}
+      >
+        Delete
+      </button>
+
+      {showConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="mx-4 max-w-sm rounded-xl border border-border bg-surface p-6 shadow-2xl">
+            <p className="text-sm text-text">
+              Delete {person.display_name}? This removes all face data for this
+              person. Photos will remain in your gallery.
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                className="rounded-lg px-4 py-1.5 text-sm text-text-soft hover:bg-hover"
+                onClick={() => setShowConfirm(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="rounded-lg bg-danger px-4 py-1.5 text-sm font-semibold text-white hover:bg-danger/80"
+                onClick={() => {
+                  setShowConfirm(false)
+                  onDelete()
+                }}
+              >
+                Delete person
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

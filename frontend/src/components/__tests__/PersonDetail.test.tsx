@@ -20,6 +20,7 @@ describe('PersonDetail', () => {
     onBack: vi.fn(),
     onRename: vi.fn(),
     onMerge: vi.fn(),
+    onDelete: vi.fn(),
   }
 
   beforeEach(() => {
@@ -66,5 +67,31 @@ describe('PersonDetail', () => {
     // Should show original name, not input
     expect(screen.getByText('Alice')).toBeTruthy()
     expect(screen.queryByDisplayValue('Bob')).toBeNull()
+  })
+
+  it('renders delete button', () => {
+    render(<PersonDetail {...defaultProps} />)
+    expect(screen.getByText('Delete')).toBeTruthy()
+  })
+
+  it('shows confirmation dialog on delete click', () => {
+    render(<PersonDetail {...defaultProps} />)
+    fireEvent.click(screen.getByText('Delete'))
+    expect(screen.getByText(/Delete Alice\?/)).toBeTruthy()
+  })
+
+  it('calls onDelete on confirm', () => {
+    const onDelete = vi.fn()
+    render(<PersonDetail {...defaultProps} onDelete={onDelete} />)
+    fireEvent.click(screen.getByText('Delete'))
+    fireEvent.click(screen.getByText('Delete person'))
+    expect(onDelete).toHaveBeenCalled()
+  })
+
+  it('hides dialog on cancel', () => {
+    render(<PersonDetail {...defaultProps} />)
+    fireEvent.click(screen.getByText('Delete'))
+    fireEvent.click(screen.getByText('Cancel'))
+    expect(screen.queryByText(/Delete Alice\?/)).toBeNull()
   })
 })
