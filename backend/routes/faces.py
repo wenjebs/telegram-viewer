@@ -63,6 +63,10 @@ class ConflictsRequest(BaseModel):
     exclude_person_id: int
 
 
+class DeleteBatchRequest(BaseModel):
+    person_ids: list[int]
+
+
 # endregion
 
 
@@ -229,6 +233,28 @@ async def check_conflicts(
         db, req.media_ids, req.exclude_person_id
     )
     return {"conflicts": conflicts}
+
+
+@router.delete("/persons/delete-batch")
+async def delete_persons_batch_endpoint(
+    req: DeleteBatchRequest,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    all_crop_paths: list[str] = []
+    deleted = 0
+    for person_id in req.person_ids:
+        person = await get_person(db, person_id)
+        if not person:
+            continue
+        crop_paths = await delete_person(db, person_id)
+        all_crop_paths.extend(crop_paths)
+        deleted += 1
+    for path in all_crop_paths:
+        try:
+            Path(path).unlink(missing_ok=True)
+        except OSError:
+            logger.warning("Failed to delete crop file: %s", path)
+    return {"deleted": deleted}
 
 
 # endregion

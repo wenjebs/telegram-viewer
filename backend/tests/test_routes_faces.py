@@ -605,6 +605,51 @@ class TestDeletePersonEndpoint:
         assert resp.status_code == 404
 
 
+class TestDeletePersonsBatch:
+    async def test_delete_batch_success(self, client, real_db_app):
+        db = real_db_app
+        await _seed_media(db, msg_id=1, chat_id=1)
+        await _seed_media(db, msg_id=2, chat_id=1)
+        p1 = await _seed_person(db, name="Alice", face_count=1, media_id=1)
+        p2 = await _seed_person(db, name="Bob", face_count=1, media_id=2)
+
+        resp = await client.request(
+            "DELETE",
+            "/faces/persons/delete-batch",
+            json={"person_ids": [p1, p2]},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json() == {"deleted": 2}
+        # Both persons should be gone
+        assert (await client.get(f"/faces/persons/{p1}")).status_code == 404
+        assert (await client.get(f"/faces/persons/{p2}")).status_code == 404
+
+    async def test_delete_batch_skips_missing(self, client, real_db_app):
+        db = real_db_app
+        await _seed_media(db, msg_id=1, chat_id=1)
+        p1 = await _seed_person(db, name="Alice", face_count=1, media_id=1)
+
+        resp = await client.request(
+            "DELETE",
+            "/faces/persons/delete-batch",
+            json={"person_ids": [p1, 99999]},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json() == {"deleted": 1}
+
+    async def test_delete_batch_empty(self, client, real_db_app):
+        resp = await client.request(
+            "DELETE",
+            "/faces/persons/delete-batch",
+            json={"person_ids": []},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json() == {"deleted": 0}
+
+
 class TestConflictsEndpoint:
     async def test_returns_conflicts(self, client, real_db_app):
         db = real_db_app
