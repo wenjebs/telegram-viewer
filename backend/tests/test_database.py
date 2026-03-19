@@ -552,7 +552,7 @@ async def test_get_media_count_excludes_hidden_dialog(db):
 # ---------------------------------------------------------------------------
 
 
-def _make_face(media_id, confidence=0.9, embedding=b"emb"):
+def _make_face(media_id, confidence=0.9, embedding=b"emb", sharpness=None):
     now = utc_now_iso()
     return {
         "media_id": media_id,
@@ -564,6 +564,10 @@ def _make_face(media_id, confidence=0.9, embedding=b"emb"):
         "confidence": confidence,
         "crop_path": None,
         "created_at": now,
+        "pitch": None,
+        "yaw": None,
+        "roll": None,
+        "sharpness": sharpness,
     }
 
 
@@ -1250,6 +1254,10 @@ async def _seed_person_with_media(db, media_id=1, face_count=2, name=None):
             "confidence": 0.9,
             "crop_path": f"/tmp/face_{media_id}_{i}.jpg",
             "created_at": now,
+            "pitch": None,
+            "yaw": None,
+            "roll": None,
+            "sharpness": None,
         }
         for i in range(face_count)
     ]
