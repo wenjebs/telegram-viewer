@@ -20,6 +20,7 @@ interface Props {
   onHide?: () => void
   onFavorite?: () => void
   onUnfavorite?: () => void
+  onBeforeHide?: () => Promise<boolean> | boolean
 }
 
 export default function SelectionBar({
@@ -34,6 +35,7 @@ export default function SelectionBar({
   onHide,
   onFavorite,
   onUnfavorite,
+  onBeforeHide,
 }: Props) {
   const [selectingAll, setSelectingAll] = useState(false)
   const [unhiding, setUnhiding] = useState(false)
@@ -77,6 +79,10 @@ export default function SelectionBar({
 
   const handleHide = async () => {
     if (selectedCount === 0 || hiding) return
+    if (onBeforeHide) {
+      const proceed = await onBeforeHide()
+      if (!proceed) return
+    }
     setHiding(true)
     try {
       await hideMediaBatch([...selectedIds])
@@ -181,35 +187,38 @@ export default function SelectionBar({
           </button>
         ) : (
           <>
-            {viewMode === 'favorites' ? (
-              <button
-                className="rounded-lg bg-surface-strong px-4 py-1.5 text-sm font-semibold text-white hover:bg-surface-alt disabled:opacity-50"
-                onClick={handleUnfavorite}
-                disabled={selectedCount === 0 || unfavoriting}
-              >
-                {unfavoriting ? (
-                  'Removing...'
-                ) : (
-                  <>
-                    Unfavorite <span className="text-xs text-white/40">F</span>
-                  </>
-                )}
-              </button>
-            ) : (
-              <button
-                className="rounded-lg bg-danger/80 px-4 py-1.5 text-sm font-semibold text-white hover:bg-danger disabled:opacity-50"
-                onClick={handleFavorite}
-                disabled={selectedCount === 0 || favoriting}
-              >
-                {favoriting ? (
-                  'Saving...'
-                ) : (
-                  <>
-                    ♥ Favorite <span className="text-xs text-white/40">F</span>
-                  </>
-                )}
-              </button>
-            )}
+            {viewMode !== 'people' &&
+              (viewMode === 'favorites' ? (
+                <button
+                  className="rounded-lg bg-surface-strong px-4 py-1.5 text-sm font-semibold text-white hover:bg-surface-alt disabled:opacity-50"
+                  onClick={handleUnfavorite}
+                  disabled={selectedCount === 0 || unfavoriting}
+                >
+                  {unfavoriting ? (
+                    'Removing...'
+                  ) : (
+                    <>
+                      Unfavorite{' '}
+                      <span className="text-xs text-white/40">F</span>
+                    </>
+                  )}
+                </button>
+              ) : (
+                <button
+                  className="rounded-lg bg-danger/80 px-4 py-1.5 text-sm font-semibold text-white hover:bg-danger disabled:opacity-50"
+                  onClick={handleFavorite}
+                  disabled={selectedCount === 0 || favoriting}
+                >
+                  {favoriting ? (
+                    'Saving...'
+                  ) : (
+                    <>
+                      ♥ Favorite{' '}
+                      <span className="text-xs text-white/40">F</span>
+                    </>
+                  )}
+                </button>
+              ))}
             <button
               className="rounded-lg bg-surface-strong px-4 py-1.5 text-sm font-semibold text-white hover:bg-surface-strong disabled:opacity-50"
               onClick={handleHide}

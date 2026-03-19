@@ -88,4 +88,20 @@ describe('SelectionBar', () => {
     render(<SelectionBar {...defaultProps} />)
     expect(screen.getByText(/Download/)).toBeTruthy()
   })
+
+  it('suppresses Favorite button in people mode', () => {
+    render(
+      <SelectionBar
+        selectedCount={1}
+        onSelectAll={vi.fn()}
+        onDeselectAll={vi.fn()}
+        onDownload={vi.fn()}
+        onCancel={vi.fn()}
+        selectedIds={new Set([1])}
+        viewMode="people"
+      />,
+    )
+    expect(screen.queryByText(/Favorite/)).toBeNull()
+    expect(screen.getByText('Hide')).toBeTruthy()
+  })
 })
