@@ -14,6 +14,7 @@ import {
   hideMediaBatch,
   deleteMediaBatch,
   deleteAllHidden,
+  deletePersonsBatch,
 } from '#/api/client'
 import type { MediaItem, Person, ConflictsResponse } from '#/api/schemas'
 import { useSearchParams } from '#/hooks/useSearchParam'
@@ -32,7 +33,7 @@ import ViewModeHeader from '#/components/ViewModeHeader'
 import PersonBreadcrumb from '#/components/PersonBreadcrumb'
 import MediaToolbar from '#/components/MediaToolbar'
 import PeopleToolbar from '#/components/PeopleToolbar'
-import PersonMergeBar from '#/components/PersonMergeBar'
+import PersonActionBar from '#/components/PersonActionBar'
 
 const AuthFlow = lazy(() => import('#/components/AuthFlow'))
 const Lightbox = lazy(() => import('#/components/Lightbox'))
@@ -76,6 +77,7 @@ function Home() {
     type: 'selection' | 'all'
     ids?: number[]
   } | null>(null)
+  const [deletingPersons, setDeletingPersons] = useState(false)
 
   const data = useHomeData()
 
@@ -287,6 +289,22 @@ function Home() {
       setDeleteConfirm(null)
     }
   }, [deleteConfirm, data])
+
+  const handleDeletePersons = async () => {
+    const ids = [...data.personMerge.selectMode.selectedIds]
+    const count = ids.length
+    setDeletingPersons(true)
+    try {
+      await deletePersonsBatch(ids)
+      data.personMerge.selectMode.exitSelectMode()
+      data.persons.invalidate()
+      toast.success(`Deleted ${count} ${count === 1 ? 'person' : 'people'}`)
+    } catch {
+      toast.error('Failed to delete people')
+    } finally {
+      setDeletingPersons(false)
+    }
+  }
 
   // Render
   if (data.authenticated === null) return null
@@ -604,16 +622,17 @@ function Home() {
         </Suspense>
       )}
       {data.personMerge.selectMode.active && (
-        <PersonMergeBar
+        <PersonActionBar
           selectedCount={data.personMerge.selectMode.selectedCount}
           merging={data.personMerge.merging}
+          deleting={deletingPersons}
           onSelectAll={() =>
             data.personMerge.selectMode.selectAll(data.persons.persons)
           }
           onDeselectAll={data.personMerge.selectMode.deselectAll}
           onMerge={data.personMerge.openKeeperPicker}
+          onDelete={handleDeletePersons}
           onExitSelectMode={data.personMerge.selectMode.exitSelectMode}
-          persons={data.persons.persons}
         />
       )}
       {data.personMerge.showKeeperPicker && (
