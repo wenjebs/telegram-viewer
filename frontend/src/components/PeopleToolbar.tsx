@@ -2,6 +2,8 @@ interface Props {
   scanning: boolean
   scanProgress: { scanned: number; total: number }
   onStartScan: () => void
+  searchQuery: string
+  onSearchChange: (query: string) => void
   similarityThreshold: number
   onThresholdChange: (value: number) => void
   mergeSelectActive: boolean
@@ -14,6 +16,8 @@ export default function PeopleToolbar({
   scanning,
   scanProgress,
   onStartScan,
+  searchQuery,
+  onSearchChange,
   similarityThreshold,
   onThresholdChange,
   mergeSelectActive,
@@ -32,6 +36,13 @@ export default function PeopleToolbar({
           ? `Scanning... ${scanProgress.scanned}/${scanProgress.total}`
           : 'Scan Faces'}
       </button>
+      <input
+        type="text"
+        placeholder="Search people..."
+        value={searchQuery}
+        onChange={(e) => onSearchChange(e.target.value)}
+        className="rounded bg-surface-alt px-2.5 py-1 text-sm text-text placeholder:text-text-soft outline-none focus:ring-1 focus:ring-ring w-44"
+      />
       <span className="flex-1" />
       <div className="flex items-center gap-2">
         <span className="text-xs text-text-soft">Similarity</span>
