@@ -465,6 +465,7 @@ function Home() {
               onToggleSort={handleToggleSort}
             />
             <div
+              className="flex min-h-0 flex-1 flex-col"
               onContextMenu={(e: React.MouseEvent) => {
                 if (data.viewMode !== 'people' || !data.selectedPerson) return
                 if (data.selectMode.active) return
