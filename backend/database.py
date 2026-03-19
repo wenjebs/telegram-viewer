@@ -1137,6 +1137,46 @@ async def delete_person(db: aiosqlite.Connection, person_id: int) -> list[str]:
     return crop_paths
 
 
+async def get_cross_person_conflicts(
+    db: aiosqlite.Connection,
+    media_ids: list[int],
+    exclude_person_id: int,
+) -> list[dict]:
+    """Find other persons that have faces in the given media items.
+
+    Returns a list of {media_id, persons: [{id, display_name}]} for media
+    that have faces belonging to persons other than exclude_person_id.
+    """
+    if not media_ids:
+        return []
+    placeholders = ", ".join("?" for _ in media_ids)
+    async with await db.execute(
+        f"""SELECT f.media_id, p.id, p.name
+            FROM faces f
+            JOIN persons p ON f.person_id = p.id
+            WHERE f.media_id IN ({placeholders})
+              AND f.person_id != ?""",
+        [*media_ids, exclude_person_id],
+    ) as cursor:
+        rows = await cursor.fetchall()
+
+    if not rows:
+        return []
+
+    # Group by media_id
+    by_media: dict[int, list[dict]] = {}
+    for row in rows:
+        mid = row[0]
+        if mid not in by_media:
+            by_media[mid] = []
+        person = {"id": row[1], "display_name": row[2] or f"Person {row[1]}"}
+        # Deduplicate (a person may have multiple faces in same photo)
+        if not any(p["id"] == person["id"] for p in by_media[mid]):
+            by_media[mid].append(person)
+
+    return [{"media_id": mid, "persons": persons} for mid, persons in by_media.items()]
+
+
 async def get_person_media_page(
     db: aiosqlite.Connection,
     person_id: int,

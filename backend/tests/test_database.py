@@ -1230,7 +1230,7 @@ async def test_get_media_by_id_explicitly_closes_cursor(db):
 # delete_person tests
 # ---------------------------------------------------------------------------
 
-from database import delete_person  # noqa: E402
+from database import delete_person, get_cross_person_conflicts  # noqa: E402
 import numpy as np  # noqa: E402
 
 
@@ -1300,3 +1300,47 @@ class TestDeletePerson:
         """Deleting a nonexistent person returns empty list."""
         result = await delete_person(db, 99999)
         assert result == []
+
+
+class TestGetCrossPersonConflicts:
+    async def test_finds_other_persons(self, db):
+        """Returns other persons that share photos with the given media IDs."""
+        from helpers import make_media_item
+        from database import insert_media_item
+
+        await insert_media_item(db, make_media_item(message_id=1, chat_id=1, chat_name="G"))
+        p1 = await _seed_person_with_media(db, media_id=1, face_count=1, name="Alice")
+        p2 = await _seed_person_with_media(db, media_id=1, face_count=1, name="Bob")
+
+        conflicts = await get_cross_person_conflicts(db, [1], exclude_person_id=p1)
+
+        assert len(conflicts) == 1
+        assert conflicts[0]["media_id"] == 1
+        assert any(p["id"] == p2 for p in conflicts[0]["persons"])
+        assert any(p["display_name"] == "Bob" for p in conflicts[0]["persons"])
+
+    async def test_no_conflicts_when_solo(self, db):
+        """Returns empty when no other persons share the photos."""
+        from helpers import make_media_item
+        from database import insert_media_item
+
+        await insert_media_item(db, make_media_item(message_id=1, chat_id=1, chat_name="G"))
+        p1 = await _seed_person_with_media(db, media_id=1, face_count=1)
+
+        conflicts = await get_cross_person_conflicts(db, [1], exclude_person_id=p1)
+
+        assert conflicts == []
+
+    async def test_excludes_specified_person(self, db):
+        """The excluded person never appears in conflict results."""
+        from helpers import make_media_item
+        from database import insert_media_item
+
+        await insert_media_item(db, make_media_item(message_id=1, chat_id=1, chat_name="G"))
+        p1 = await _seed_person_with_media(db, media_id=1, face_count=1, name="Alice")
+        _p2 = await _seed_person_with_media(db, media_id=1, face_count=1, name="Bob")
+
+        conflicts = await get_cross_person_conflicts(db, [1], exclude_person_id=p1)
+
+        for c in conflicts:
+            assert all(p["id"] != p1 for p in c["persons"])
