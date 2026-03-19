@@ -109,7 +109,27 @@ export default function SettingsPanel({ onClose }: { onClose: () => void }) {
                   MB
                 </>
               )}
+              {cacheStatus.failed_items > 0 && (
+                <span className="text-danger/80">
+                  {' '}
+                  &middot; {cacheStatus.failed_items} failed
+                </span>
+              )}
             </div>
+          )}
+          {cacheStatus?.status === 'error' && cacheStatus.error && (
+            <p className="mt-1 px-2 text-xs text-danger/80">
+              {cacheStatus.error}
+            </p>
+          )}
+          {cacheStatus?.status === 'error' && (
+            <button
+              type="button"
+              onClick={startCache}
+              className="mt-1 px-2 text-xs text-accent transition-colors hover:text-accent/80"
+            >
+              Retry failed
+            </button>
           )}
           {(isPaused || cacheStatus?.status === 'error') && (
             <button
