@@ -4,15 +4,18 @@ Multi-select people in the people grid and delete them in bulk. Generalizes the 
 
 ## Backend
 
-### `POST /faces/persons/delete-batch`
+### `DELETE /faces/persons/delete-batch`
 
-Request body: `{ person_ids: int[] }`
+Request model:
+```python
+class DeleteBatchRequest(BaseModel):
+    person_ids: list[int]
+```
 
 Steps:
-1. Validate all person_ids exist; 404 if any missing
-2. Loop: call existing `delete_person(db, person_id)` for each, collecting crop paths
-3. After all DB deletes commit, clean up crop files
-4. Return `{ success: true, deleted_count: int }`
+1. Loop: call existing `delete_person(db, person_id)` for each, collecting crop paths. Skip any person_id that no longer exists (best-effort).
+2. After all DB deletes, clean up crop files
+3. Return `DeleteResponse` — `{ deleted: int }` (count of actually deleted persons)
 
 No new database function needed — reuses `delete_person()`.
 
@@ -20,15 +23,15 @@ No new database function needed — reuses `delete_person()`.
 
 ### API Client
 
-Add `deletePersonsBatch(personIds: number[])` in `client.ts`. POST to `/faces/persons/delete-batch` with `{ person_ids }`.
+Add `deletePersonsBatch(personIds: number[])` in `client.ts`. DELETE to `/faces/persons/delete-batch` with `{ person_ids }`. Parse response with `DeleteResponseSchema`.
 
 ### PersonMergeBar → PersonActionBar
 
-Rename `PersonMergeBar` to `PersonActionBar`. When people are selected, show:
+Rename `PersonMergeBar` to `PersonActionBar`. Remove unused `persons` prop. When people are selected, show:
 
 - Selection count label (existing)
-- **Delete** button — danger styled, triggers confirmation dialog
-- **Merge** button — existing behavior, opens KeepPersonPicker
+- **Delete** button — danger styled, enabled when `selectedCount >= 1`, triggers confirmation dialog
+- **Merge** button — existing behavior, enabled when `selectedCount >= 2`, opens KeepPersonPicker
 
 Confirmation dialog for delete: "Delete {n} people? This removes all face data for these people. Photos will remain in your gallery." with Cancel and Delete buttons.
 
@@ -43,6 +46,10 @@ Confirmation dialog for delete: "Delete {n} people? This removes all face data f
 - usePersonMerge hook's selectMode state — reused for delete action too
 - Single person delete in PersonDetail
 - KeepPersonPicker merge flow
+
+### Out of scope
+
+- Keyboard shortcut (Backspace/Delete) for delete in select mode — can be added later
 
 ## Test Updates
 
