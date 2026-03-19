@@ -10,8 +10,10 @@ import {
   getHiddenMediaIds,
   getFavoritesMediaIds,
   getPersonMediaIds,
+  getCrossPersonConflicts,
+  hideMediaBatch,
 } from '#/api/client'
-import type { MediaItem, Person } from '#/api/schemas'
+import type { MediaItem, Person, ConflictsResponse } from '#/api/schemas'
 import { useSearchParams } from '#/hooks/useSearchParam'
 import { useAppStore } from '#/stores/appStore'
 import { useHomeData } from '#/hooks/useHomeData'
@@ -38,6 +40,10 @@ const PersonDetail = lazy(() => import('#/components/PersonDetail'))
 const PersonMergeModal = lazy(() => import('#/components/PersonMergeModal'))
 const KeepPersonPicker = lazy(() => import('#/components/KeepPersonPicker'))
 const ShortcutsModal = lazy(() => import('#/components/ShortcutsModal'))
+const PhotoContextMenu = lazy(() => import('#/components/PhotoContextMenu'))
+const CrossPersonWarningModal = lazy(
+  () => import('#/components/CrossPersonWarningModal'),
+)
 
 export const Route = createFileRoute('/')({
   component: Home,
@@ -55,6 +61,15 @@ function Home() {
   const setSimilarityThreshold = useAppStore((s) => s.setSimilarityThreshold)
 
   const [peopleSearchQuery, setPeopleSearchQuery] = useState('')
+  const [contextMenu, setContextMenu] = useState<{
+    x: number
+    y: number
+    mediaId: number
+  } | null>(null)
+  const [conflicts, setConflicts] = useState<
+    ConflictsResponse['conflicts'] | null
+  >(null)
+  const [pendingHideIds, setPendingHideIds] = useState<number[]>([])
 
   const data = useHomeData()
 
@@ -199,6 +214,49 @@ function Home() {
     )
     gridContainerRef.current?.scrollTo(0, 0)
   }, [setSearch, data.sortOrder])
+
+  const handlePersonViewHide = useCallback(
+    async (mediaIds: number[]) => {
+      if (!data.selectedPerson || mediaIds.length === 0) return
+      try {
+        const result = await getCrossPersonConflicts(
+          mediaIds,
+          data.selectedPerson.id,
+        )
+        if (result.conflicts.length > 0) {
+          setConflicts(result.conflicts)
+          setPendingHideIds(mediaIds)
+        } else {
+          await hideMediaBatch(mediaIds)
+          data.selectMode.exitSelectMode()
+          data.invalidateActiveMedia()
+          data.persons.invalidate()
+          toast.success(
+            `${mediaIds.length} ${mediaIds.length === 1 ? 'photo' : 'photos'} hidden`,
+          )
+        }
+      } catch {
+        toast.error('Failed to hide photos')
+      }
+    },
+    [data],
+  )
+
+  const confirmHide = useCallback(async () => {
+    try {
+      await hideMediaBatch(pendingHideIds)
+      setConflicts(null)
+      setPendingHideIds([])
+      data.selectMode.exitSelectMode()
+      data.invalidateActiveMedia()
+      data.persons.invalidate()
+      toast.success(
+        `${pendingHideIds.length} ${pendingHideIds.length === 1 ? 'photo' : 'photos'} hidden`,
+      )
+    } catch {
+      toast.error('Failed to hide photos')
+    }
+  }, [pendingHideIds, data])
 
   // Render
   if (data.authenticated === null) return null
@@ -374,23 +432,39 @@ function Home() {
               sortOrder={data.sortOrder}
               onToggleSort={handleToggleSort}
             />
-            <MediaGrid
-              items={data.activeItems}
-              hasMore={data.activeHasMore}
-              loading={data.activeLoading}
-              onLoadMore={handleLoadMore}
-              onItemClick={handleItemClick}
-              syncing={data.viewMode === 'normal' ? data.syncing : false}
-              syncStatuses={data.syncStatuses}
-              selectMode={data.selectMode.active}
-              selectedIds={data.selectMode.selectedIds}
-              onToggle={handleToggle}
-              onSelectDateGroup={data.selectMode.selectDateGroup}
-              onLongPress={handleLongPress}
-              containerRef={gridContainerRef}
-              dragHandlers={dragSelect.handlers}
-              selectionRect={dragSelect.selectionRect}
-            />
+            <div
+              onContextMenu={(e: React.MouseEvent) => {
+                if (data.viewMode !== 'people' || !data.selectedPerson) return
+                if (data.selectMode.active) return
+                const card = (e.target as HTMLElement).closest('[data-item-id]')
+                if (!card) return
+                e.preventDefault()
+                const mediaId = Number(card.getAttribute('data-item-id'))
+                setContextMenu({
+                  x: e.clientX,
+                  y: e.clientY,
+                  mediaId,
+                })
+              }}
+            >
+              <MediaGrid
+                items={data.activeItems}
+                hasMore={data.activeHasMore}
+                loading={data.activeLoading}
+                onLoadMore={handleLoadMore}
+                onItemClick={handleItemClick}
+                syncing={data.viewMode === 'normal' ? data.syncing : false}
+                syncStatuses={data.syncStatuses}
+                selectMode={data.selectMode.active}
+                selectedIds={data.selectMode.selectedIds}
+                onToggle={handleToggle}
+                onSelectDateGroup={data.selectMode.selectDateGroup}
+                onLongPress={handleLongPress}
+                containerRef={gridContainerRef}
+                dragHandlers={dragSelect.handlers}
+                selectionRect={dragSelect.selectionRect}
+              />
+            </div>
           </>
         )}
       </div>
@@ -422,6 +496,14 @@ function Home() {
             onCancel={data.selectMode.exitSelectMode}
             selectedIds={data.selectMode.selectedIds}
             viewMode={data.viewMode}
+            onBeforeHide={
+              data.viewMode === 'people' && data.selectedPerson
+                ? async () => {
+                    await handlePersonViewHide([...data.selectMode.selectedIds])
+                    return false
+                  }
+                : undefined
+            }
             onUnhide={() => {
               data.hidden.removeItems([...data.selectMode.selectedIds])
               data.selectMode.exitSelectMode()
@@ -496,6 +578,31 @@ function Home() {
               }
             }}
             onClose={() => setShowMergeModal(false)}
+          />
+        </Suspense>
+      )}
+      {contextMenu && (
+        <Suspense>
+          <PhotoContextMenu
+            x={contextMenu.x}
+            y={contextMenu.y}
+            onHide={() => {
+              handlePersonViewHide([contextMenu.mediaId])
+              setContextMenu(null)
+            }}
+            onClose={() => setContextMenu(null)}
+          />
+        </Suspense>
+      )}
+      {conflicts && (
+        <Suspense>
+          <CrossPersonWarningModal
+            conflicts={conflicts}
+            onConfirm={confirmHide}
+            onCancel={() => {
+              setConflicts(null)
+              setPendingHideIds([])
+            }}
           />
         </Suspense>
       )}
