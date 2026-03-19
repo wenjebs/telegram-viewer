@@ -301,6 +301,31 @@ async def test_unhide_batch(mock_tg, real_db_app, mock_bg_tasks, client):
     assert resp2.json()["count"] == 0
 
 
+@pytest.mark.asyncio
+async def test_hide_batch(mock_tg, real_db_app, mock_bg_tasks, client):
+    db = real_db_app
+    await upsert_dialogs_batch(db, [
+        {"id": 1, "name": "G1", "type": "group", "unread_count": 0, "last_message_date": "2026-03-15T10:00:00"},
+        {"id": 2, "name": "G2", "type": "group", "unread_count": 0, "last_message_date": "2026-03-15T10:00:00"},
+        {"id": 3, "name": "G3", "type": "group", "unread_count": 0, "last_message_date": "2026-03-15T10:00:00"},
+    ])
+
+    resp = await client.post("/groups/hide-batch", json={"dialog_ids": [1, 3]})
+    assert resp.status_code == 200
+    assert resp.json()["success"] is True
+
+    # Verify they are hidden
+    resp2 = await client.get("/groups/hidden/count")
+    assert resp2.json()["count"] == 2
+
+    # Verify G2 is NOT hidden
+    resp3 = await client.get("/groups/hidden")
+    hidden_ids = [g["id"] for g in resp3.json()]
+    assert 1 in hidden_ids
+    assert 3 in hidden_ids
+    assert 2 not in hidden_ids
+
+
 # ---------------------------------------------------------------------------
 # Unsync
 # ---------------------------------------------------------------------------

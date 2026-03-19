@@ -19,6 +19,7 @@ from database import (
     clear_chat_media,
     clear_all_media,
     hide_dialog,
+    hide_dialogs,
     unhide_dialogs,
     get_hidden_dialogs,
     get_hidden_dialog_count,
@@ -75,6 +76,10 @@ class UnhideBatchRequest(BaseModel):
     dialog_ids: list[int]
 
 
+class HideBatchRequest(BaseModel):
+    dialog_ids: list[int]
+
+
 @router.get("")
 async def list_groups(
     tg: TelegramClientWrapper = Depends(get_tg),
@@ -113,7 +118,8 @@ async def list_hidden_groups(db: aiosqlite.Connection = Depends(get_db)):
     dialogs = await get_hidden_dialogs(db)
     states = await get_all_sync_states(db)
     state_map = {s["chat_id"]: s for s in states}
-    return _merge_sync_states(dialogs, state_map)
+    media_counts = await get_media_counts_by_chat(db)
+    return _merge_sync_states(dialogs, state_map, media_counts)
 
 
 @router.get("/hidden/count")
@@ -128,6 +134,15 @@ async def unhide_groups_batch(
     db: aiosqlite.Connection = Depends(get_db),
 ):
     await unhide_dialogs(db, req.dialog_ids)
+    return {"success": True}
+
+
+@router.post("/hide-batch")
+async def hide_groups_batch(
+    req: HideBatchRequest,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    await hide_dialogs(db, req.dialog_ids)
     return {"success": True}
 
 

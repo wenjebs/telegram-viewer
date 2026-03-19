@@ -657,6 +657,17 @@ async def hide_dialog(db: aiosqlite.Connection, dialog_id: int) -> None:
     await db.commit()
 
 
+async def hide_dialogs(db: aiosqlite.Connection, dialog_ids: list[int]) -> None:
+    if not dialog_ids:
+        return
+    placeholders = ", ".join("?" for _ in dialog_ids)
+    await db.execute(
+        f"UPDATE dialogs SET hidden_at = ? WHERE id IN ({placeholders})",
+        (utc_now_iso(), *dialog_ids),
+    )
+    await db.commit()
+
+
 async def unhide_dialogs(db: aiosqlite.Connection, dialog_ids: list[int]) -> None:
     if not dialog_ids:
         return
@@ -1097,20 +1108,58 @@ async def bulk_assign_persons(db: aiosqlite.Connection, clusters: list[dict]) ->
         )
 
 
-async def get_all_persons(db: aiosqlite.Connection) -> list[dict]:
-    async with await db.execute(
-        """SELECT p.*, f.crop_path as avatar_crop_path
-           FROM persons p
-           LEFT JOIN faces f ON f.id = p.representative_face_id
-           ORDER BY p.face_count DESC"""
-    ) as cursor:
-        rows = await cursor.fetchall()
+async def get_all_persons(
+    db: aiosqlite.Connection, *, min_sharpness: float = 0
+) -> dict:
+    """Return persons list and max sharpness. Optionally filter by min face sharpness."""
+    # Get max sharpness across all faces (unfiltered, for slider range)
+    async with await db.execute("SELECT MAX(sharpness) FROM faces") as cursor:
+        row = await cursor.fetchone()
+    max_sharpness = row[0] if row and row[0] is not None else 0.0
+
+    if min_sharpness > 0:
+        # Filtered query: only include faces meeting sharpness threshold
+        # NULL sharpness values are excluded when filtering (SQLite NULL >= x → NULL → excluded)
+        async with await db.execute(
+            """WITH qualified_faces AS (
+                SELECT id, person_id, confidence, crop_path
+                FROM faces
+                WHERE person_id IS NOT NULL
+                  AND sharpness >= ?
+            )
+            SELECT
+                p.id, p.name, p.created_at, p.updated_at,
+                COUNT(qf.id) AS face_count,
+                (SELECT qf2.id FROM qualified_faces qf2
+                 WHERE qf2.person_id = p.id
+                 ORDER BY qf2.confidence DESC LIMIT 1) AS representative_face_id,
+                (SELECT qf3.crop_path FROM qualified_faces qf3
+                 WHERE qf3.person_id = p.id
+                 ORDER BY qf3.confidence DESC LIMIT 1) AS avatar_crop_path
+            FROM persons p
+            JOIN qualified_faces qf ON qf.person_id = p.id
+            GROUP BY p.id
+            HAVING COUNT(qf.id) > 0
+            ORDER BY face_count DESC""",
+            (min_sharpness,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+    else:
+        async with await db.execute(
+            """SELECT p.*, f.crop_path as avatar_crop_path
+               FROM persons p
+               LEFT JOIN faces f ON f.id = p.representative_face_id
+               ORDER BY p.face_count DESC"""
+        ) as cursor:
+            rows = await cursor.fetchall()
+
     result = []
     for r in rows:
         d = dict(r)
         d["display_name"] = d["name"] or f"Person {d['id']}"
         result.append(d)
-    return result
+
+    return {"persons": result, "max_sharpness": float(max_sharpness)}
 
 
 async def get_person(db: aiosqlite.Connection, person_id: int) -> dict | None:
