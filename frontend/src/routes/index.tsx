@@ -1,4 +1,4 @@
-import { lazy, Suspense, useRef, useCallback } from 'react'
+import { lazy, Suspense, useRef, useCallback, useState, useMemo } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -17,7 +17,8 @@ import { useHomeData } from '#/hooks/useHomeData'
 import { useHomeHandlers } from '#/hooks/useHomeHandlers'
 import { useHomeShortcuts } from '#/hooks/useHomeShortcuts'
 import { useDragSelect } from '#/hooks/useDragSelect'
-import { searchSchema } from '#/routes/searchSchema'
+import { searchSchema } from '#/routes/-searchSchema'
+import Fuse from 'fuse.js'
 import Sidebar from '#/components/Sidebar'
 import ViewModeTabs from '#/components/ViewModeTabs'
 import MediaGrid from '#/components/MediaGrid'
@@ -52,7 +53,29 @@ function Home() {
   const similarityThreshold = useAppStore((s) => s.similarityThreshold)
   const setSimilarityThreshold = useAppStore((s) => s.setSimilarityThreshold)
 
+  const [peopleSearchQuery, setPeopleSearchQuery] = useState('')
+
   const data = useHomeData()
+
+  const peopleFuse = useMemo(
+    () =>
+      new Fuse(data.persons.persons, {
+        keys: ['display_name'],
+        threshold: 0.4,
+        ignoreLocation: true,
+        minMatchCharLength: 1,
+      }),
+    [data.persons.persons],
+  )
+
+  const filteredPersons = useMemo(
+    () =>
+      !peopleSearchQuery.trim()
+        ? data.persons.persons
+        : peopleFuse.search(peopleSearchQuery).map((r) => r.item),
+    [peopleFuse, peopleSearchQuery, data.persons.persons],
+  )
+
   const handlers = useHomeHandlers({
     invalidateCounts: data.invalidateCounts,
     refetchGroups: data.refetchGroups,
@@ -225,10 +248,13 @@ function Home() {
               data.personMerge.selectMode.enterSelectMode()
             }
             onDeselectAll={data.personMerge.selectMode.deselectAll}
+            searchQuery={peopleSearchQuery}
+            onSearchChange={setPeopleSearchQuery}
             onClose={() => {
               if (data.personMerge.selectMode.active) {
                 data.personMerge.selectMode.exitSelectMode()
               } else {
+                setPeopleSearchQuery('')
                 handlers.handleViewModeChange('normal')
               }
             }}
@@ -256,7 +282,7 @@ function Home() {
         {data.viewMode === 'people' && !data.selectedPerson ? (
           <Suspense>
             <PeopleGrid
-              persons={data.persons.persons}
+              persons={filteredPersons}
               loading={data.persons.loading}
               onPersonClick={(p: Person) => {
                 data.personMerge.selectMode.exitSelectMode()
@@ -265,7 +291,10 @@ function Home() {
               selectMode={data.personMerge.selectMode.active}
               selectedIds={data.personMerge.selectMode.selectedIds}
               onToggle={data.personMerge.selectMode.toggle}
-              similarGroups={data.persons.similarGroups}
+              similarGroups={
+                peopleSearchQuery.trim() ? [] : data.persons.similarGroups
+              }
+              emptyReason={peopleSearchQuery.trim() ? 'search' : 'empty'}
               onSelectGroup={(ids) => {
                 if (!data.personMerge.selectMode.active) {
                   data.personMerge.selectMode.enterSelectMode()
