@@ -6,7 +6,7 @@ Add a Remotion project to the repo that produces two video assets — an animate
 
 ## Approach
 
-Single `remotion/` folder at the repo root with two compositions sharing design tokens (Manrope, sky blue #0284c7, dark theme). Assets are rendered locally via `npx remotion render` and committed to `assets/`.
+Single `remotion/` folder at the repo root with two compositions sharing design tokens (Manrope, sky blue #0284c7, dark theme). Assets are rendered locally via `bunx remotion render` and committed to `assets/`.
 
 ## 1. Logo Animation
 
@@ -29,13 +29,15 @@ Single `remotion/` folder at the repo root with two compositions sharing design 
 - Text fade: opacity 0→1 over 0.4s
 
 **Elements:**
-- Rounded-rect viewfinder bracket (matches the existing logo shape)
+- Rounded-rect viewfinder bracket — recreated as SVG paths in `Logo.tsx` (not importing the existing PNGs, which are raster and lack animation-friendly structure)
 - Center focus dot (4px circle)
 - "Telegram Viewer" in Manrope 600, white
 
+**Font loading:** Use `@remotion/google-fonts` to load Manrope. Import in `theme.ts` so both compositions share it.
+
 ## 2. Demo Video
 
-**Output:** MP4 (1280x720, 30fps, ~15s) + compressed GIF fallback (~800px wide)
+**Output:** MP4 (1280x720, 30fps, ~15s) + compressed GIF fallback (~800px wide, 10fps, 256-color palette, target <5MB — use gifski or ffmpeg palettegen for quality)
 
 **Scenes:**
 
@@ -59,7 +61,7 @@ Fade to centered logo + "Telegram Viewer" + tagline "Self-hosted. Private. Open 
 - Manrope font throughout
 - Sky blue (#0284c7) for accents and interactive highlights
 - Gradient placeholders for photos (dark blue tones, no real images)
-- Crossfade transitions between scenes (0.3s)
+- Crossfade transitions between scenes (0.3s overlap — scenes share 0.3s at boundaries, total duration stays ~15s)
 - Spring physics for UI interactions
 
 **Fake cursor:**
@@ -75,12 +77,12 @@ Fade to centered logo + "Telegram Viewer" + tagline "Self-hosted. Private. Open 
 2. **Project name + description** — "Telegram Viewer" as h1, one-line description below
 3. **Badges row** — License, Docker Ready, TypeScript, Python (centered)
 4. **Demo video** — embedded GIF/MP4 from composition 2, full-width in a rounded container
-5. **Feature highlights** — 2x2 grid of feature cards:
+5. **Feature highlights** — HTML table in markdown (2 columns, 2 rows) with emoji + bold title + description per cell. GitHub renders HTML tables natively.
    - Media Browser — browse photos, videos & files
    - Face Detection — auto-detect and filter by person
    - Search & Filter — by chat, date, media type
    - Self-Hosted — data stays local, no cloud
-6. **Architecture** — visual diagram: Frontend → Backend → Caddy (enhanced from current table)
+6. **Architecture** — Mermaid diagram (GitHub renders `mermaid` code blocks natively): Frontend → Backend → Caddy flow with tech labels
 7. **Quick Start (Docker)** — existing content preserved
 8. **Manual Setup** — existing content preserved
 9. **Development** — existing content preserved
@@ -124,11 +126,15 @@ assets/
 cd remotion
 bun install
 # Preview in browser
-npx remotion studio
+bunx remotion studio
 # Render logo GIF
-npx remotion render LogoAnimation --image-format=png --output=../assets/logo-animated.gif
+bunx remotion render LogoAnimation --codec=gif --output=../assets/logo-animated.gif
+# Render static PNG fallback
+bunx remotion render LogoAnimation --frame=75 --output=../assets/logo-static.png
 # Render demo MP4
-npx remotion render DemoVideo --output=../assets/demo.mp4
+bunx remotion render DemoVideo --output=../assets/demo.mp4
+# Render demo GIF (compressed — use gifski for better quality if available)
+bunx remotion render DemoVideo --codec=gif --every-nth-frame=3 --output=../assets/demo.gif
 ```
 
 ## Non-goals
