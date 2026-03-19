@@ -50,14 +50,23 @@ export default function PeopleToolbar({
           type="range"
           min="0"
           max="1"
-          step="0.05"
+          step="0.01"
           value={similarityThreshold}
           onChange={(e) => onThresholdChange(Number(e.target.value))}
-          className="h-1 w-24 cursor-pointer appearance-none rounded-full bg-surface-alt accent-accent"
+          className="h-2 w-36 cursor-pointer appearance-none rounded-full bg-surface-alt accent-accent"
         />
-        <span className="w-7 text-right text-xs tabular-nums text-text">
-          {similarityThreshold.toFixed(2)}
-        </span>
+        <input
+          type="number"
+          min="0"
+          max="1"
+          step="0.01"
+          value={similarityThreshold}
+          onChange={(e) => {
+            const v = Number(e.target.value)
+            if (v >= 0 && v <= 1) onThresholdChange(v)
+          }}
+          className="w-10 appearance-none rounded bg-surface-alt px-1.5 py-0.5 text-right text-xs tabular-nums text-text outline-none focus:ring-1 focus:ring-ring [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+        />
       </div>
       {mergeSelectActive ? (
         <button

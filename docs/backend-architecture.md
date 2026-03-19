@@ -36,20 +36,25 @@
 - `GET /zip-download/{job_id}` — download completed zip file, auto-cleans up job + temp file via BackgroundTask
 - `GET /hidden` — paginated list of hidden items (sort param), sorted by hidden_at DESC
 - `GET /hidden/count` — returns `{count: int}`
+- `GET /hidden/ids` — returns `{ids: int[]}`
 - `POST /unhide-batch` — accepts `{media_ids: int[]}`, unhides items
 - `GET /favorites` — paginated list of favorited items (sort param), sorted by favorited_at DESC
 - `GET /favorites/count` — returns `{count: int}`
+- `GET /favorites/ids` — returns `{ids: int[]}`
 - `POST /{media_id}/hide` — sets hidden_at timestamp
 - `POST /{media_id}/unhide` — clears hidden_at
 - `POST /hide-batch` — hide multiple items
+- `DELETE /delete-batch` — permanently delete hidden items by ID, returns `{deleted: int}`. 409 if any item is not hidden
+- `DELETE /hidden` — permanently delete all hidden media, returns `{deleted: int}`
 - `POST /favorite-batch` — favorite multiple items
 - `POST /unfavorite-batch` — unfavorite multiple items
 - `POST /{media_id}/favorite` — toggles favorited_at (sets or clears), returns `{success, favorited}`
 - `GET /count` — media count (excluding hidden) with optional filters (groups, type, date range, faces), returns `{count: int}`
+- `GET /ids` — media IDs (excluding hidden) with optional filters, returns `{ids: int[]}`
 - `GET /{media_id}/thumbnail` — cached locally on disk, fetched from Telegram on miss, HTTP Cache-Control headers (24h immutable)
 - `GET /{media_id}/download` — cached locally on disk, fetched from Telegram on miss. Videos stream progressively via `StreamingResponse` + Telethon `iter_download` (tee-to-disk caching); non-videos buffer fully then return `FileResponse` (range request support). HTTP Cache-Control headers (24h immutable)
 
-Note: Static routes (/hidden, /favorites, /unhide-batch, /download-zip, /prepare-zip, /zip-status, /zip-download) must be defined before /{media_id} parameterized routes.
+Note: Static routes (/hidden, /favorites, /unhide-batch, /hide-batch, /delete-batch, /download-zip, /prepare-zip, /zip-status, /zip-download, /count, /ids) must be defined before /{media_id} parameterized routes.
 
 **Faces** (`/faces`, 11 endpoints):
 - `GET /scan-status` — returns `{status, scanned, total, person_count}`. Status: idle/scanning/clustering/done/error
@@ -58,10 +63,13 @@ Note: Static routes (/hidden, /favorites, /unhide-batch, /download-zip, /prepare
 - `POST /persons/merge` — merge two persons: moves all faces from `merge_id` to `keep_id`
 - `POST /persons/merge-batch` — merge multiple persons into one: moves all faces from `merge_ids[]` to `keep_id`
 - `GET /persons/similar-groups` — find groups of similar persons via cosine similarity (threshold query param, default 0.4)
+- `POST /persons/conflicts` — accepts `{media_ids: int[], exclude_person_id: int}`, returns persons with faces in those media items (excluding specified person)
 - `GET /persons/{person_id}` — single person with face count, representative face, avatar crop
+- `DELETE /persons/{person_id}` — delete person and unassign all their faces
 - `PATCH /persons/{person_id}` — rename a person
 - `DELETE /persons/{person_id}/faces/{face_id}` — remove a face from a person (unassign + decrement count)
 - `GET /persons/{person_id}/media` — cursor-paginated media items containing a person's face. Optional `faces` filter (`none`/`solo`/`group`) for filtering by face count
+- `GET /persons/{person_id}/media/ids` — all media IDs for a person, returns `{ids: int[]}`
 - `GET /{face_id}/crop` — JPEG face crop image (30% bbox expansion, 112x112 resize)
 
 **Settings** (`/settings`, 2 endpoints):

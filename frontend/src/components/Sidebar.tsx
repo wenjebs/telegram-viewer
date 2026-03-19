@@ -507,8 +507,9 @@ export default function Sidebar({
                       </div>
                     ))
                   : filteredGroups.map((g) => (
-                      <button
-                        type="button"
+                      <div
+                        role="button"
+                        tabIndex={0}
                         key={g.id}
                         className={`group mb-1 flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition-colors ${
                           g.active
@@ -516,6 +517,12 @@ export default function Sidebar({
                             : 'opacity-50 hover:bg-hover hover:opacity-75'
                         }`}
                         onClick={() => toggleActive(g)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            toggleActive(g)
+                          }
+                        }}
                         title={
                           g.active ? 'Click to deactivate' : 'Click to activate'
                         }
@@ -557,7 +564,7 @@ export default function Sidebar({
                           onHide={onHideDialog}
                           onUnsync={onUnsyncGroup}
                         />
-                      </button>
+                      </div>
                     ))}
               </div>
             </>

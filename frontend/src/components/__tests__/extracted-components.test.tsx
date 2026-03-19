@@ -6,7 +6,7 @@ import ViewModeHeader from '#/components/ViewModeHeader'
 import PersonBreadcrumb from '#/components/PersonBreadcrumb'
 import MediaToolbar from '#/components/MediaToolbar'
 import PeopleToolbar from '#/components/PeopleToolbar'
-import PersonMergeBar from '#/components/PersonMergeBar'
+import PersonActionBar from '#/components/PersonActionBar'
 
 describe('ActiveGroupChips', () => {
   it('renders nothing when no active groups', () => {
@@ -161,36 +161,61 @@ describe('PeopleToolbar', () => {
   })
 })
 
-describe('PersonMergeBar', () => {
+describe('PersonActionBar', () => {
   const defaultProps = {
     selectedCount: 3,
     merging: false,
+    deleting: false,
     onSelectAll: vi.fn(),
     onDeselectAll: vi.fn(),
     onMerge: vi.fn(),
+    onDelete: vi.fn(),
     onExitSelectMode: vi.fn(),
-    persons: [makePerson(), makePerson()],
   }
 
   it('shows selected count', () => {
-    render(<PersonMergeBar {...defaultProps} />)
+    render(<PersonActionBar {...defaultProps} />)
     expect(screen.getByText('3 selected')).toBeTruthy()
   })
 
   it('merge button disabled when less than 2 selected', () => {
-    render(<PersonMergeBar {...defaultProps} selectedCount={1} />)
+    render(<PersonActionBar {...defaultProps} selectedCount={1} />)
     const btn = screen.getByText('Merge')
     expect(btn).toBeDisabled()
   })
 
   it('merge button enabled when 2+ selected', () => {
-    render(<PersonMergeBar {...defaultProps} />)
+    render(<PersonActionBar {...defaultProps} />)
     const btn = screen.getByText('Merge')
     expect(btn).not.toBeDisabled()
   })
 
   it('shows Merging... when merging', () => {
-    render(<PersonMergeBar {...defaultProps} merging={true} />)
+    render(<PersonActionBar {...defaultProps} merging={true} />)
     expect(screen.getByText('Merging...')).toBeTruthy()
+  })
+
+  it('delete button always enabled when selected', () => {
+    render(<PersonActionBar {...defaultProps} selectedCount={1} />)
+    const btn = screen.getByText('Delete')
+    expect(btn).not.toBeDisabled()
+  })
+
+  it('shows Deleting... when deleting', () => {
+    render(<PersonActionBar {...defaultProps} deleting={true} />)
+    expect(screen.getByText('Deleting...')).toBeTruthy()
+  })
+
+  it('delete button opens confirmation dialog', () => {
+    render(<PersonActionBar {...defaultProps} />)
+    fireEvent.click(screen.getByText('Delete'))
+    expect(screen.getByText(/Delete 3 people\?/)).toBeTruthy()
+  })
+
+  it('confirmation cancel closes dialog without calling onDelete', () => {
+    render(<PersonActionBar {...defaultProps} />)
+    fireEvent.click(screen.getByText('Delete'))
+    fireEvent.click(screen.getByText('Cancel'))
+    expect(defaultProps.onDelete).not.toHaveBeenCalled()
   })
 })

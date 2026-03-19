@@ -12,11 +12,14 @@ React 19, TanStack Start/Router (file-based routing), TanStack Query (data fetch
 - **MediaCard** — thumbnail with lazy loading, video play icon overlay + duration badge (MM:SS), chat name label (bottom-left pill). Select mode: checkbox overlay, blue ring border, long-press/right-click to enter select mode, dimmed unselected items.
 - **DateHeader** — date separator (locale full date string)
 - **DateRangeFilter** — collapsible date range picker using react-day-picker in range mode
-- **Lightbox** — full-screen modal for media viewing, keyboard nav (Esc/arrows/S/H/F), download button, select/favorite/hide/unhide buttons with key hints, caption display, status indicators (selected check + favorite heart), metadata panel (type, sender, chat, date, dimensions, file size)
-- **SelectionBar** — floating bottom pill (fixed position, z-40, slideUp animation). Shows count, select all, deselect, download + favorite (normal view), unhide (hidden view), cancel. Download button shows progress during async zip preparation (files_ready/files_total, then "Building zip..."). Uses `sonner` toasts for error/success feedback instead of inline error state.
+- **Lightbox** — full-screen modal for media viewing, keyboard nav (Esc/arrows/S/H/F), download button, select/favorite/hide/unhide buttons with key hints, caption display, status indicators (selected check + favorite heart), metadata panel (type, sender, chat, date, dimensions, file size). Auto-triggers pagination when navigating near page boundary.
+- **LightboxMedia** — media renderer inside Lightbox handling photo/video playback with loading, error, and placeholder states
+- **SelectionBar** — floating bottom pill (fixed position, z-40, slideUp animation). Shows count, select all, deselect, download + favorite (normal view), unhide + delete (hidden view), hide with `onBeforeHide` cross-person check (people view), cancel. Download button shows progress during async zip preparation (files_ready/files_total, then "Building zip..."). Uses `sonner` toasts for error/success feedback instead of inline error state.
 - **PeopleGrid** — grid of person cards showing face crop avatars, display names, and face counts. Click to view person detail, cmd+click to enter merge select mode and toggle selection (auto-exits on last deselect), shift+click to inline rename, drag rectangle multi-select for merge.
-- **PersonDetail** — media grid filtered to a specific person's face appearances, with rename and merge actions
+- **PersonDetail** — media grid filtered to a specific person's face appearances, with rename, merge, and delete (with confirmation) actions
 - **PersonMergeModal** — modal for merging two person records, moves all faces from source to target
+- **CrossPersonWarningModal** — warning modal when hiding media that has faces belonging to other persons, shows affected persons
+- **PhotoContextMenu** — right-click context menu for photos in people view (hide with cross-person check, favorite, download)
 - **ShortcutsModal** — keyboard shortcuts reference modal (opened via `?` / shift+slash), lists all app hotkeys grouped by context (General, Lightbox, Selection mode)
 - **KeepPersonPicker** — modal to select which person to keep when merging duplicate persons
 - **GroupOverflowMenu** — overflow menu for group actions (hide, unsync)
@@ -27,7 +30,7 @@ React 19, TanStack Start/Router (file-based routing), TanStack Query (data fetch
 - **EmptyState** — getting-started guidance (3 steps: pick chats, sync, browse) for initial empty gallery
 - **SkeletonGroup** — animated skeleton loader for media grid showing fake date header and thumbnail grid
 - **ActiveGroupChips** — chip bar showing active syncing groups with click-to-deactivate and "Show all" deselect-all action
-- **ViewModeHeader** — banner for hidden/favorites view modes with icon and close button
+- **ViewModeHeader** — banner for hidden/favorites view modes with icon, close button, and Delete All button (hidden mode)
 - **PersonBreadcrumb** — selected person name header with back button
 - **MediaToolbar** — item count, select mode toggle, sort order button
 - **PeopleToolbar** — face scan button, similarity threshold input, select/deselect all/close buttons
@@ -75,11 +78,11 @@ React 19, TanStack Start/Router (file-based routing), TanStack Query (data fetch
 
 ## API Client (`src/api/client.ts`)
 
-Schema-validated fetch wrapper (`fetchJSON(path, schema, init)`) over `/api` prefix (proxied to localhost:8000 via Vite). Every JSON response is validated at runtime via `schema.parse()` (Zod) — no type casting. Shared `ensureOk()` helper for error handling across `fetchJSON` and `downloadZip`. Reusable `SuccessResponse` and `CountResponse` schemas for common response shapes. Sync via `startSyncAll` (POST) + polling `getSyncStatus` every 2s. Download zip via async prepare-poll-download flow (no blob buffering); legacy `downloadZip` kept for compatibility. Hide/unhide/favorite/hidden-list/favorites-list endpoints. Face endpoints: scan control, person CRUD (list, rename, merge, remove face), person media pagination (with optional `faces` filter), face crop URLs. Settings endpoints: `exportSettings()` (JSON file download), `importSettings()` (file upload with import summary).
+Schema-validated fetch wrapper (`fetchJSON(path, schema, init)`) over `/api` prefix (proxied to localhost:8000 via Vite). Every JSON response is validated at runtime via `schema.parse()` (Zod) — no type casting. Shared `ensureOk()` helper for error handling across `fetchJSON` and `downloadZip`. Reusable `SuccessResponse`, `CountResponse`, `IdsResponse`, and `DeleteResponse` schemas for common response shapes. Sync via `startSyncAll` (POST) + polling `getSyncStatus` every 2s. Download zip via async prepare-poll-download flow (no blob buffering); legacy `downloadZip` kept for compatibility. Hide/unhide/favorite/hidden-list/favorites-list endpoints. Permanent delete: `deleteMediaBatch` (by IDs), `deleteAllHidden` (all hidden). ID retrieval: `getMediaIds`, `getHiddenMediaIds`, `getFavoritesMediaIds`, `getPersonMediaIds` for select-all operations. Face endpoints: scan control, person CRUD (list, rename, merge, delete, remove face), cross-person conflict check (`getCrossPersonConflicts`), person media pagination (with optional `faces` filter), face crop URLs. Settings endpoints: `exportSettings()` (JSON file download), `importSettings()` (file upload with import summary).
 
 ## Schemas (`src/api/schemas.ts`)
 
-Zod schemas as single source of truth — TypeScript types are inferred via `z.infer<>`. Schemas: AuthStatus, Group, MediaItem (media_type: 'photo'|'video'|'file', hidden_at, favorited_at), MediaPage, SyncStatus (status: 'idle'|'syncing'|'done'|'error'), Person, FaceScanStatus (status: 'idle'|'scanning'|'clustering'|'done'|'error'), ZipJobResponse, ZipStatusResponse (status: 'preparing'|'zipping'|'done'|'error'), PreviewCountItem (photos, videos, documents, total), PreviewCounts (Record<string, PreviewCountItem | null>), ImportResult (settings import summary with applied/skipped counts). Reusable: SuccessResponse, CountResponse.
+Zod schemas as single source of truth — TypeScript types are inferred via `z.infer<>`. Schemas: AuthStatus, Group, MediaItem (media_type: 'photo'|'video'|'file', hidden_at, favorited_at), MediaPage, SyncStatus (status: 'idle'|'syncing'|'done'|'error'), Person, FaceScanStatus (status: 'idle'|'scanning'|'clustering'|'done'|'error'), ZipJobResponse, ZipStatusResponse (status: 'preparing'|'zipping'|'done'|'error'), PreviewCountItem (photos, videos, documents, total), PreviewCounts (Record<string, PreviewCountItem | null>), ImportResult (settings import summary with applied/skipped counts), ConflictPerson (id, display_name), ConflictsResponse (array of {media_id, persons}). Reusable: SuccessResponse, CountResponse, IdsResponse, DeleteResponse.
 
 ## Layout
 
