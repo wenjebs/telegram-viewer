@@ -3,9 +3,16 @@ import type { ViewMode } from '#/hooks/useHomeData'
 interface Props {
   viewMode: ViewMode
   onClose: () => void
+  onDeleteAll?: () => void
+  hiddenCount?: number
 }
 
-export default function ViewModeHeader({ viewMode, onClose }: Props) {
+export default function ViewModeHeader({
+  viewMode,
+  onClose,
+  onDeleteAll,
+  hiddenCount,
+}: Props) {
   if (viewMode === 'normal' || viewMode === 'people') return null
 
   return (
@@ -30,6 +37,15 @@ export default function ViewModeHeader({ viewMode, onClose }: Props) {
         {viewMode === 'hidden' && 'Hidden Media'}
         {viewMode === 'favorites' && 'Favorites'}
       </span>
+      {viewMode === 'hidden' && onDeleteAll && (
+        <button
+          className="rounded px-2 py-1 text-xs text-danger hover:bg-hover disabled:opacity-50 disabled:hover:bg-transparent"
+          onClick={onDeleteAll}
+          disabled={hiddenCount === 0}
+        >
+          Delete All
+        </button>
+      )}
       <button
         className="rounded p-1 text-text-soft hover:bg-hover hover:text-text"
         onClick={onClose}
