@@ -139,9 +139,12 @@ async def start_scan(
 
 
 @router.get("/persons")
-async def list_persons(db: aiosqlite.Connection = Depends(get_db)):
-    persons = await get_all_persons(db)
-    return persons
+async def list_persons(
+    min_sharpness: float = 0,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    data = await get_all_persons(db, min_sharpness=min_sharpness)
+    return data
 
 
 @router.post("/persons/merge")

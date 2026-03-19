@@ -631,7 +631,7 @@ async def test_bulk_assign_persons(db):
         {"face_ids": face_ids[:2], "representative_face_id": face_ids[0]},
         {"face_ids": [face_ids[2]], "representative_face_id": face_ids[2]},
     ])
-    persons = await get_all_persons(db)
+    persons = (await get_all_persons(db))["persons"]
     assert len(persons) == 2
     counts = sorted([p["face_count"] for p in persons])
     assert counts == [1, 2]
@@ -645,7 +645,7 @@ async def test_get_all_persons_display_name(db):
     await bulk_assign_persons(db, [
         {"face_ids": face_ids, "representative_face_id": face_ids[0]},
     ])
-    persons = await get_all_persons(db)
+    persons = (await get_all_persons(db))["persons"]
     assert len(persons) == 1
     # No name set, display_name should be "Person {id}"
     assert persons[0]["display_name"] == f"Person {persons[0]['id']}"
@@ -659,7 +659,7 @@ async def test_get_person(db):
     await bulk_assign_persons(db, [
         {"face_ids": face_ids, "representative_face_id": face_ids[0]},
     ])
-    persons = await get_all_persons(db)
+    persons = (await get_all_persons(db))["persons"]
     person = await get_person(db, persons[0]["id"])
     assert person is not None
     assert person["face_count"] == 1
@@ -679,7 +679,7 @@ async def test_rename_person(db):
     await bulk_assign_persons(db, [
         {"face_ids": face_ids, "representative_face_id": face_ids[0]},
     ])
-    persons = await get_all_persons(db)
+    persons = (await get_all_persons(db))["persons"]
     pid = persons[0]["id"]
     await rename_person(db, pid, "Alice")
     person = await get_person(db, pid)
@@ -701,7 +701,7 @@ async def _setup_two_persons(db):
         {"face_ids": face_ids[:2], "representative_face_id": face_ids[0]},
         {"face_ids": [face_ids[2]], "representative_face_id": face_ids[2]},
     ])
-    persons = await get_all_persons(db)
+    persons = (await get_all_persons(db))["persons"]
     # Sort so person_a has more faces
     persons.sort(key=lambda p: p["face_count"], reverse=True)
     return persons[0]["id"], persons[1]["id"]
@@ -746,7 +746,7 @@ async def test_remove_face_from_person_decrement(db):
     await bulk_assign_persons(db, [
         {"face_ids": face_ids, "representative_face_id": face_ids[0]},
     ])
-    persons = await get_all_persons(db)
+    persons = (await get_all_persons(db))["persons"]
     pid = persons[0]["id"]
     await remove_face_from_person(db, face_ids[0])
     person = await get_person(db, pid)
@@ -794,7 +794,7 @@ async def test_get_person_media_page(db):
     await bulk_assign_persons(db, [
         {"face_ids": face_ids, "representative_face_id": face_ids[0]},
     ])
-    persons = await get_all_persons(db)
+    persons = (await get_all_persons(db))["persons"]
     pid = persons[0]["id"]
     page = await get_person_media_page(db, pid, limit=10)
     assert len(page) == 1
@@ -809,7 +809,7 @@ async def test_get_person_media_page_excludes_hidden(db):
     await bulk_assign_persons(db, [
         {"face_ids": face_ids, "representative_face_id": face_ids[0]},
     ])
-    persons = await get_all_persons(db)
+    persons = (await get_all_persons(db))["persons"]
     pid = persons[0]["id"]
     await hide_media_item(db, row["id"])
     page = await get_person_media_page(db, pid, limit=10)
@@ -1395,7 +1395,7 @@ async def test_delete_media_items_permanently_cleans_faces(db):
     cursor = await db.execute("SELECT COUNT(*) FROM faces WHERE media_id = ?", (item["id"],))
     assert (await cursor.fetchone())[0] == 0
     # Person auto-deleted (had only one face)
-    assert len(await get_all_persons(db)) == 0
+    assert len((await get_all_persons(db))["persons"]) == 0
 
 
 @pytest.mark.asyncio
@@ -1421,7 +1421,7 @@ async def test_delete_media_items_permanently_reassigns_representative_face(db):
 
     assert deleted == 1
     # Person still exists with face_count=1
-    persons = await get_all_persons(db)
+    persons = (await get_all_persons(db))["persons"]
     assert len(persons) == 1
     # Representative face has been reassigned to the surviving face
     assert persons[0]["representative_face_id"] == face_ids[1]

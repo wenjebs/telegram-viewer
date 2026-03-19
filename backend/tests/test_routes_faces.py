@@ -207,7 +207,9 @@ async def test_list_persons_empty(face_db):
     ) as client:
         resp = await client.get("/faces/persons")
     assert resp.status_code == 200
-    assert resp.json() == []
+    data = resp.json()
+    assert data["persons"] == []
+    assert "max_sharpness" in data
 
 
 @pytest.mark.asyncio
@@ -218,10 +220,39 @@ async def test_list_persons_returns_data(face_db):
         transport=ASGITransport(app=app), base_url="http://test"
     ) as client:
         resp = await client.get("/faces/persons")
-    data = resp.json()
+    data = resp.json()["persons"]
     assert len(data) == 1
     assert data[0]["name"] == "Alice"
     assert data[0]["display_name"] == "Alice"
+
+
+@pytest.mark.asyncio
+async def test_list_persons_min_sharpness_filter(face_db):
+    db, media_id = face_db
+    # Seed a sharp person and a blurry person
+    media_id2 = await _seed_media(db, msg_id=99, chat_id=1)
+    await _seed_person(db, name="Sharp", sharpness=500.0, media_id=media_id)
+    await _seed_person(db, name="Blurry", sharpness=10.0, media_id=media_id2)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        # No filter — both visible
+        resp = await client.get("/faces/persons")
+        assert resp.status_code == 200
+        data = resp.json()
+        names = {p["display_name"] for p in data["persons"]}
+        assert "Sharp" in names
+        assert "Blurry" in names
+        assert data["max_sharpness"] == pytest.approx(500.0)
+
+        # With min_sharpness=100 — only Sharp visible
+        resp = await client.get("/faces/persons?min_sharpness=100")
+        assert resp.status_code == 200
+        data = resp.json()
+        names = {p["display_name"] for p in data["persons"]}
+        assert "Sharp" in names
+        assert "Blurry" not in names
 
 
 @pytest.mark.asyncio
