@@ -107,6 +107,22 @@ CREATE TABLE IF NOT EXISTS face_scan_state (
     last_error      TEXT,
     updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS cache_jobs (
+    id              INTEGER PRIMARY KEY DEFAULT 1,
+    status          TEXT NOT NULL DEFAULT 'idle',
+    total_items     INTEGER NOT NULL DEFAULT 0,
+    cached_items    INTEGER NOT NULL DEFAULT 0,
+    skipped_items   INTEGER NOT NULL DEFAULT 0,
+    failed_items    INTEGER NOT NULL DEFAULT 0,
+    bytes_cached    INTEGER NOT NULL DEFAULT 0,
+    last_media_id   INTEGER,
+    flood_wait_until TEXT,
+    started_at      DATETIME,
+    completed_at    DATETIME,
+    error           TEXT,
+    updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
@@ -498,6 +514,12 @@ async def clear_all_media(db: aiosqlite.Connection) -> list[str]:
     await db.execute(
         "UPDATE face_scan_state SET status = 'idle', scanned_count = 0, "
         "total_count = 0, updated_at = ? WHERE id = 1",
+        (utc_now_iso(),),
+    )
+    await db.execute(
+        "UPDATE cache_jobs SET status = 'idle', total_items = 0, cached_items = 0, "
+        "skipped_items = 0, failed_items = 0, bytes_cached = 0, last_media_id = NULL, "
+        "flood_wait_until = NULL, error = NULL, updated_at = ? WHERE id = 1",
         (utc_now_iso(),),
     )
     await db.commit()
@@ -1494,5 +1516,71 @@ async def import_settings(db: aiosqlite.Connection, data: dict) -> dict:
     await db.commit()
     return {"applied": applied, "skipped": skipped}
 
+
+# endregion
+
+
+# region Cache Jobs
+
+_CACHE_JOB_FIELDS = frozenset(
+    {
+        "status",
+        "total_items",
+        "cached_items",
+        "skipped_items",
+        "failed_items",
+        "bytes_cached",
+        "last_media_id",
+        "flood_wait_until",
+        "started_at",
+        "completed_at",
+        "error",
+    }
+)
+
+
+async def get_cache_job_state(db: aiosqlite.Connection) -> dict:
+    async with await db.execute("SELECT * FROM cache_jobs WHERE id = 1") as cursor:
+        row = await cursor.fetchone()
+    if not row:
+        return {
+            "status": "idle",
+            "total_items": 0,
+            "cached_items": 0,
+            "skipped_items": 0,
+            "failed_items": 0,
+            "bytes_cached": 0,
+            "last_media_id": None,
+            "flood_wait_until": None,
+            "started_at": None,
+            "completed_at": None,
+            "error": None,
+        }
+    return dict(row)
+
+
+async def update_cache_job_state(db: aiosqlite.Connection, **kwargs) -> None:
+    if not kwargs:
+        return
+    invalid = set(kwargs.keys()) - _CACHE_JOB_FIELDS
+    if invalid:
+        raise ValueError(f"Invalid cache_jobs fields: {invalid}")
+    async with await db.execute("SELECT id FROM cache_jobs WHERE id = 1") as cursor:
+        row = await cursor.fetchone()
+    now = utc_now_iso()
+    if not row:
+        await db.execute(
+            """INSERT INTO cache_jobs (id, status, total_items, cached_items,
+               skipped_items, failed_items, bytes_cached, updated_at)
+               VALUES (1, 'idle', 0, 0, 0, 0, 0, ?)""",
+            (now,),
+        )
+    sets = ", ".join(f"{k} = :{k}" for k in kwargs)
+    kwargs["now"] = now
+    await db.execute(
+        f"UPDATE cache_jobs SET {sets}, updated_at = :now WHERE id = 1",
+        kwargs,
+    )
+    await db.commit()
 
 # endregion
