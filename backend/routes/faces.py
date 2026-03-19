@@ -24,6 +24,8 @@ from database import (
     remove_face_from_person,
     get_person_media_page,
     get_person_media_ids,
+    delete_person,
+    get_cross_person_conflicts,
 )
 from deps import get_db, get_tg, get_background_tasks
 from face_scanner import scan_faces
@@ -54,6 +56,11 @@ class MergeBatchRequest(BaseModel):
 
 class RenamePersonRequest(BaseModel):
     name: str
+
+
+class ConflictsRequest(BaseModel):
+    media_ids: list[int]
+    exclude_person_id: int
 
 
 # endregion
@@ -213,6 +220,17 @@ async def similar_groups(
     return {"groups": groups}
 
 
+@router.post("/persons/conflicts")
+async def check_conflicts(
+    req: ConflictsRequest,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    conflicts = await get_cross_person_conflicts(
+        db, req.media_ids, req.exclude_person_id
+    )
+    return {"conflicts": conflicts}
+
+
 # endregion
 
 
@@ -228,6 +246,24 @@ async def get_person_endpoint(
     if not person:
         raise HTTPException(status_code=404, detail="Person not found")
     return person
+
+
+@router.delete("/persons/{person_id}")
+async def delete_person_endpoint(
+    person_id: int,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    person = await get_person(db, person_id)
+    if not person:
+        raise HTTPException(status_code=404, detail="Person not found")
+    crop_paths = await delete_person(db, person_id)
+    # Clean up crop files (after DB commit, following established pattern)
+    for path in crop_paths:
+        try:
+            Path(path).unlink(missing_ok=True)
+        except OSError:
+            logger.warning("Failed to delete crop file: %s", path)
+    return {"success": True}
 
 
 @router.patch("/persons/{person_id}")

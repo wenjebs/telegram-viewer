@@ -584,3 +584,53 @@ async def test_get_face_crop_404_file_missing(face_db):
         resp = await client.get(f"/faces/{fids[0]}/crop")
     assert resp.status_code == 404
     assert "missing" in resp.json()["detail"].lower()
+
+
+class TestDeletePersonEndpoint:
+    async def test_delete_person_success(self, client, real_db_app):
+        db = real_db_app
+        await _seed_media(db, msg_id=1, chat_id=1)
+        person_id = await _seed_person(db, name="Alice", face_count=2, media_id=1)
+
+        resp = await client.delete(f"/faces/persons/{person_id}")
+
+        assert resp.status_code == 200
+        assert resp.json() == {"success": True}
+        # Person should be gone
+        resp2 = await client.get(f"/faces/persons/{person_id}")
+        assert resp2.status_code == 404
+
+    async def test_delete_person_not_found(self, client, real_db_app):
+        resp = await client.delete("/faces/persons/99999")
+        assert resp.status_code == 404
+
+
+class TestConflictsEndpoint:
+    async def test_returns_conflicts(self, client, real_db_app):
+        db = real_db_app
+        await _seed_media(db, msg_id=1, chat_id=1)
+        p1 = await _seed_person(db, name="Alice", face_count=1, media_id=1)
+        p2 = await _seed_person(db, name="Bob", face_count=1, media_id=1)
+
+        resp = await client.post(
+            "/faces/persons/conflicts",
+            json={"media_ids": [1], "exclude_person_id": p1},
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["conflicts"]) == 1
+        assert any(p["display_name"] == "Bob" for p in data["conflicts"][0]["persons"])
+
+    async def test_no_conflicts(self, client, real_db_app):
+        db = real_db_app
+        await _seed_media(db, msg_id=1, chat_id=1)
+        p1 = await _seed_person(db, name="Alice", face_count=1, media_id=1)
+
+        resp = await client.post(
+            "/faces/persons/conflicts",
+            json={"media_ids": [1], "exclude_person_id": p1},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json() == {"conflicts": []}
