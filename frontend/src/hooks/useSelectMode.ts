@@ -91,6 +91,10 @@ export function useSelectMode() {
     lastClickedIdRef.current = null
   }, [])
 
+  const setAnchor = useCallback((id: number) => {
+    lastClickedIdRef.current = id
+  }, [])
+
   const isSelected = useCallback(
     (id: number) => selectedIds.has(id),
     [selectedIds],
@@ -109,6 +113,7 @@ export function useSelectMode() {
     selectAll,
     selectDateGroup,
     deselectAll,
+    setAnchor,
     isSelected,
   }
 }

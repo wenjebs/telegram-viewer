@@ -140,4 +140,25 @@ describe('useSelectMode', () => {
     expect(result.current.isSelected(20)).toBe(true)
     expect(result.current.isSelected(30)).toBe(true)
   })
+
+  it('setAnchor sets the anchor without modifying selectedIds', () => {
+    const { result } = renderHook(() => useSelectMode())
+
+    act(() => result.current.setAnchor(5))
+
+    // selectedIds should still be empty
+    expect(result.current.selectedIds.size).toBe(0)
+
+    // Now shift-click (toggleRange) should use 5 as anchor
+    const items = [
+      { id: 3 },
+      { id: 5 },
+      { id: 7 },
+      { id: 9 },
+    ]
+    act(() => result.current.toggleRange(9, items))
+
+    // Should select range from 5 to 9: ids 5, 7, 9
+    expect(result.current.selectedIds).toEqual(new Set([5, 7, 9]))
+  })
 })
