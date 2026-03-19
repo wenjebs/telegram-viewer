@@ -657,3 +657,57 @@ async def test_download_for_scan_no_chat_id():
 
     result = await _download_for_scan(AsyncMock(), {})
     assert result is None
+
+
+# ---------------------------------------------------------------------------
+# pose + sharpness extraction
+# ---------------------------------------------------------------------------
+
+
+def test_detect_faces_extracts_quality_attributes(tmp_path):
+    """_detect_faces_in_image should extract pitch/yaw/roll/sharpness."""
+    import cv2
+
+    # Create a test image with a sharp region (not random noise — use edges for deterministic sharpness)
+    img = np.zeros((480, 640, 3), dtype=np.uint8)
+    cv2.rectangle(img, (100, 100), (200, 200), (255, 255, 255), 2)  # sharp edges
+    img_path = tmp_path / "test.jpg"
+    cv2.imwrite(str(img_path), img)
+
+    fake_face = _make_fake_face(bbox=(100, 100, 200, 200))
+    fake_face.pose = np.array([5.0, -10.0, 2.0])
+
+    with patch("face_scanner._get_face_app") as mock_app:
+        mock_app.return_value.get.return_value = [fake_face]
+        from face_scanner import _detect_faces_in_image
+        results = _detect_faces_in_image(str(img_path))
+
+    assert len(results) == 1
+    r = results[0]
+    assert r["pitch"] == pytest.approx(5.0)
+    assert r["yaw"] == pytest.approx(-10.0)
+    assert r["roll"] == pytest.approx(2.0)
+    assert isinstance(r["sharpness"], float)
+    assert r["sharpness"] >= 0
+
+
+def test_detect_faces_handles_missing_pose(tmp_path):
+    """If face.pose is None, pitch/yaw/roll should be None."""
+    import cv2
+
+    img = np.zeros((480, 640, 3), dtype=np.uint8)
+    img_path = tmp_path / "test.jpg"
+    cv2.imwrite(str(img_path), img)
+
+    fake_face = _make_fake_face()
+    fake_face.pose = None
+
+    with patch("face_scanner._get_face_app") as mock_app:
+        mock_app.return_value.get.return_value = [fake_face]
+        from face_scanner import _detect_faces_in_image
+        results = _detect_faces_in_image(str(img_path))
+
+    assert len(results) == 1
+    assert results[0]["pitch"] is None
+    assert results[0]["yaw"] is None
+    assert results[0]["roll"] is None

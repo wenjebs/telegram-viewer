@@ -57,6 +57,22 @@ def _detect_faces_in_image(img_path: str) -> list[dict]:
         bbox_y = float(y1 / h)
         bbox_w = float((x2 - x1) / w)
         bbox_h = float((y2 - y1) / h)
+
+        # Extract pose (pitch, yaw, roll) from 3D landmarks
+        pose = getattr(face, "pose", None)
+        pitch = float(pose[0]) if pose is not None else None
+        yaw = float(pose[1]) if pose is not None else None
+        roll_val = float(pose[2]) if pose is not None else None
+
+        # Compute sharpness on original-resolution face crop (before 112x112 resize)
+        x1i, y1i, x2i, y2i = int(x1), int(y1), int(x2), int(y2)
+        face_region = img[max(0, y1i):y2i, max(0, x1i):x2i]
+        if face_region.size > 0:
+            gray = cv2.cvtColor(face_region, cv2.COLOR_BGR2GRAY)
+            sharpness = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+        else:
+            sharpness = None
+
         results.append(
             {
                 "embedding": face.embedding.astype(np.float32).tobytes(),
@@ -67,6 +83,10 @@ def _detect_faces_in_image(img_path: str) -> list[dict]:
                 "confidence": float(face.det_score),
                 "img": img,
                 "bbox_px": (int(x1), int(y1), int(x2), int(y2)),
+                "pitch": pitch,
+                "yaw": yaw,
+                "roll": roll_val,
+                "sharpness": sharpness,
             }
         )
     return results
@@ -174,6 +194,10 @@ async def scan_faces(db, tg, force_rescan: bool = False) -> None:
                                     "confidence": f["confidence"],
                                     "crop_path": None,
                                     "created_at": now,
+                                    "pitch": f.get("pitch"),
+                                    "yaw": f.get("yaw"),
+                                    "roll": f.get("roll"),
+                                    "sharpness": f.get("sharpness"),
                                 }
                                 for f in qualified
                             ]
@@ -209,6 +233,10 @@ async def scan_faces(db, tg, force_rescan: bool = False) -> None:
                         batch_media_ids.append(media_id)
 
                         if scanned % 5 == 0:
+                            # Recount if new photos arrived during scan
+                            if scanned >= total:
+                                remaining = await get_unscanned_photo_count(db)
+                                total = scanned + remaining
                             await update_face_scan_state(
                                 db, scanned_count=scanned, total_count=total
                             )
