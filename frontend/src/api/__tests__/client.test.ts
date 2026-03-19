@@ -8,6 +8,7 @@ import {
 } from '#/test/fixtures'
 import {
   clearGroupMedia,
+  deletePersonsBatch,
   downloadZip,
   getAuthStatus,
   getDownloadUrl,
@@ -242,6 +243,21 @@ describe('clearGroupMedia', () => {
     const fn = mockFetch({ '/groups/99/media': { success: true } })
     await clearGroupMedia(99)
     expect(fn.mock.calls[0][1]!.method).toBe('DELETE')
+  })
+})
+
+describe('deletePersonsBatch', () => {
+  it('deletePersonsBatch sends DELETE with person_ids', async () => {
+    const fn = mockFetch({ '/faces/persons/delete-batch': { deleted: 2 } })
+    const result = await deletePersonsBatch([1, 2])
+    expect(result).toEqual({ deleted: 2 })
+    expect(fn).toHaveBeenCalledWith(
+      '/api/faces/persons/delete-batch',
+      expect.objectContaining({
+        method: 'DELETE',
+        body: JSON.stringify({ person_ids: [1, 2] }),
+      }),
+    )
   })
 })
 

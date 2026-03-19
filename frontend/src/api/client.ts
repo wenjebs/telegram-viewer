@@ -433,6 +433,13 @@ export const deletePerson = (personId: number) =>
     method: 'DELETE',
   })
 
+export const deletePersonsBatch = (personIds: number[]) =>
+  fetchJSON('/faces/persons/delete-batch', DeleteResponse, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ person_ids: personIds }),
+  })
+
 export const getCrossPersonConflicts = (
   mediaIds: number[],
   excludePersonId: number,
