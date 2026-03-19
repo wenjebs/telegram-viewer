@@ -81,6 +81,19 @@ vi.mock('#/hooks/useGroups', () => ({
   })),
 }))
 
+// Mock useCacheJob
+vi.mock('#/hooks/useCacheJob', () => ({
+  useCacheJob: () => ({
+    status: undefined,
+    start: vi.fn(),
+    pause: vi.fn(),
+    cancel: vi.fn(),
+    isRunning: false,
+    isPaused: false,
+    isCompleted: false,
+  }),
+}))
+
 // Mock api/client for count queries
 vi.mock('#/api/client', () => ({
   getMediaCount: vi.fn().mockResolvedValue({ count: 0 }),
