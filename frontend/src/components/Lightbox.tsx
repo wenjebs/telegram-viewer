@@ -3,6 +3,7 @@ import { useHotkeys } from 'react-hotkeys-hook'
 import type { MediaItem } from '#/api/schemas'
 import { getDownloadUrl } from '#/api/client'
 import { formatDateShort, formatFileSize } from '#/utils/format'
+import LightboxMedia from '#/components/LightboxMedia'
 
 interface Props {
   item: MediaItem
@@ -65,7 +66,6 @@ export default function Lightbox({
   useHotkeys('f', () => onToggleFavorite?.(), [onToggleFavorite])
 
   const downloadUrl = getDownloadUrl(item.id, item.date)
-  const isVideo = item.media_type === 'video'
 
   const handleDownload = () => {
     const a = document.createElement('a')
@@ -139,20 +139,7 @@ export default function Lightbox({
           )}
         </div>
 
-        {isVideo ? (
-          <video
-            src={downloadUrl}
-            controls
-            autoPlay
-            className="max-h-[85vh] max-w-[90vw] rounded object-contain"
-          />
-        ) : (
-          <img
-            src={downloadUrl}
-            alt={item.caption || ''}
-            className="max-h-[85vh] max-w-[90vw] rounded object-contain"
-          />
-        )}
+        <LightboxMedia item={item} />
 
         {/* Media info */}
         <div className="mt-4 space-y-1 text-center">
@@ -210,7 +197,7 @@ export default function Lightbox({
               aria-label={selected ? 'Deselect (S)' : 'Select (S)'}
               title={selected ? 'Deselect (S)' : 'Select (S)'}
             >
-              {selected ? '✓' : '☐'}
+              {selected ? '✓' : '☐'} Select
             </button>
           )}
           {onToggleFavorite && (
@@ -224,7 +211,7 @@ export default function Lightbox({
               aria-label={favorited ? 'Unfavorite (F)' : 'Favorite (F)'}
               title={favorited ? 'Unfavorite (F)' : 'Favorite (F)'}
             >
-              {favorited ? '\u2665' : '\u2661'}
+              {favorited ? '\u2665' : '\u2661'} Favorite
             </button>
           )}
           {onHide && (

@@ -27,17 +27,18 @@ describe('Lightbox', () => {
   it('renders image for photo items', () => {
     const item = makeMediaItem({ media_type: 'photo', id: 1, caption: 'test' })
     render(<Lightbox item={item} {...defaultProps} />)
-    const img = screen.getByAltText('test')
+    // Full-res img now uses data-testid
+    const img = screen.getByTestId('lightbox-full')
     expect(img.tagName).toBe('IMG')
     expect(img.getAttribute('src')).toContain('/download')
   })
 
   it('renders video for video items', () => {
     const item = makeMediaItem({ media_type: 'video', id: 2 })
-    const { container } = render(<Lightbox item={item} {...defaultProps} />)
-    const video = container.querySelector('video')
+    render(<Lightbox item={item} {...defaultProps} />)
+    const video = screen.getByTestId('lightbox-full-video')
     expect(video).toBeTruthy()
-    expect(video?.getAttribute('src')).toContain('/download')
+    expect(video.getAttribute('src')).toContain('/download')
   })
 
   it('shows prev button when hasPrev is true', () => {
