@@ -308,6 +308,17 @@ export function useHomeData() {
       setSearch({ mode: 'people' }, { replace: true })
     }
   }, [search.person, viewMode, setSearch])
+
+  // Trigger pagination when lightbox navigation approaches the boundary
+  useEffect(() => {
+    if (
+      lightbox.selectedIndex >= 0 &&
+      activeItems.length - lightbox.selectedIndex <= 10 &&
+      activeHasMore
+    ) {
+      activeSource.fetchNextPage()
+    }
+  }, [lightbox.selectedIndex, activeItems.length, activeHasMore, activeSource])
   // #endregion
 
   return {

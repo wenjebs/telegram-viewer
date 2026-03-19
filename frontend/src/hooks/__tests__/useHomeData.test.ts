@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { vi, type Mock } from 'vitest'
 import { createWrapper } from '#/test/wrapper'
 import { makeMediaItem } from '#/test/fixtures'
@@ -159,6 +159,7 @@ import { useHiddenMedia } from '#/hooks/useHiddenMedia'
 import { useFavoritesMedia } from '#/hooks/useFavoritesMedia'
 import { usePersonMedia } from '#/hooks/usePersonMedia'
 import { usePersons } from '#/hooks/usePersons'
+import { useLightbox } from '#/hooks/useLightbox'
 import {
   getAuthStatus,
   getHiddenCount,
@@ -171,6 +172,10 @@ import {
 describe('useHomeData', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    ;(useSearchParams as Mock).mockReturnValue({
+      search: {},
+      setSearch: vi.fn(),
+    })
     ;(getAuthStatus as Mock).mockResolvedValue({ authenticated: true })
     ;(getHiddenCount as Mock).mockResolvedValue({ count: 5 })
     ;(getFavoritesCount as Mock).mockResolvedValue({ count: 3 })
@@ -283,6 +288,78 @@ describe('useHomeData', () => {
 
     expect(result.current.viewMode).toBe('favorites')
     expect(result.current.activeItems).toHaveLength(1)
+  })
+
+  it('calls fetchNextPage when lightbox index is within 10 of boundary', async () => {
+    const fetchNextPage = vi.fn()
+    const items = Array.from({ length: 50 }, (_, i) =>
+      makeMediaItem({
+        id: i + 1,
+        date: `2026-01-${String(50 - i).padStart(2, '0')}T00:00:00Z`,
+      }),
+    )
+    ;(useMedia as Mock).mockReturnValue({
+      ...mockMediaReturn(items),
+      hasMore: true,
+      fetchNextPage,
+    })
+    ;(useLightbox as Mock).mockReturnValue({
+      selectedItem: items[42],
+      setSelectedItem: vi.fn(),
+      selectedIndex: 42,
+      justClosedLightboxRef: { current: false },
+      handlePrev: vi.fn(),
+      handleNext: vi.fn(),
+      handleClose: vi.fn(),
+      handleToggleSelect: vi.fn(),
+      handleHide: vi.fn(),
+      handleUnhide: vi.fn(),
+      handleToggleFavorite: vi.fn(),
+    })
+
+    renderHook(() => useHomeData(), {
+      wrapper: createWrapper(),
+    })
+
+    await waitFor(() => {
+      expect(fetchNextPage).toHaveBeenCalled()
+    })
+  })
+
+  it('does not call fetchNextPage when lightbox is far from boundary', async () => {
+    const fetchNextPage = vi.fn()
+    const items = Array.from({ length: 50 }, (_, i) =>
+      makeMediaItem({
+        id: i + 1,
+        date: `2026-01-${String(50 - i).padStart(2, '0')}T00:00:00Z`,
+      }),
+    )
+    ;(useMedia as Mock).mockReturnValue({
+      ...mockMediaReturn(items),
+      hasMore: true,
+      fetchNextPage,
+    })
+    ;(useLightbox as Mock).mockReturnValue({
+      selectedItem: items[10],
+      setSelectedItem: vi.fn(),
+      selectedIndex: 10,
+      justClosedLightboxRef: { current: false },
+      handlePrev: vi.fn(),
+      handleNext: vi.fn(),
+      handleClose: vi.fn(),
+      handleToggleSelect: vi.fn(),
+      handleHide: vi.fn(),
+      handleUnhide: vi.fn(),
+      handleToggleFavorite: vi.fn(),
+    })
+
+    renderHook(() => useHomeData(), {
+      wrapper: createWrapper(),
+    })
+
+    // Flush effects then assert
+    await act(async () => {})
+    expect(fetchNextPage).not.toHaveBeenCalled()
   })
 
   it('uses personMedia source when in people mode with selected person', () => {
