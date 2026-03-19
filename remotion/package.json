@@ -1,0 +1,24 @@
+{
+  "name": "telegram-viewer-video",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "studio": "remotion studio",
+    "render:logo": "remotion render LogoAnimation --codec=gif --output=../assets/logo-animated.gif",
+    "render:logo-static": "remotion still LogoAnimation --frame=75 --output=../assets/logo-static.png",
+    "render:demo": "remotion render DemoVideo --output=../assets/demo.mp4",
+    "render:demo-gif": "remotion render DemoVideo --codec=gif --every-nth-frame=3 --output=../assets/demo.gif",
+    "render:all": "bun run render:logo && bun run render:logo-static && bun run render:demo && bun run render:demo-gif"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4",
+    "@remotion/google-fonts": "^4",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "remotion": "^4"
+  },
+  "devDependencies": {
+    "@types/react": "^19",
+    "typescript": "^5.7.2"
+  }
+}
