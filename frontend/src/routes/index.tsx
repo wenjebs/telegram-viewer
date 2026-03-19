@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
   renamePerson,
+  deletePerson,
   mergePersons,
   getMediaIds,
   getHiddenMediaIds,
@@ -348,6 +349,17 @@ function Home() {
                     }
                   }}
                   onMerge={() => setShowMergeModal(true)}
+                  onDelete={async () => {
+                    try {
+                      const name = data.selectedPerson!.display_name
+                      await deletePerson(data.selectedPerson!.id)
+                      data.setSelectedPersonId(undefined)
+                      data.persons.invalidate()
+                      toast.success(`Deleted ${name}`)
+                    } catch {
+                      toast.error('Failed to delete person')
+                    }
+                  }}
                 />
               </Suspense>
             )}
