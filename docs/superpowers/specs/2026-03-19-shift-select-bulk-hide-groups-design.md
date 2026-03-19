@@ -14,18 +14,18 @@ The chats panel (Sidebar) only supports single-click group toggling. Users manag
 Add `POST /groups/hide-batch` mirroring the existing `POST /groups/unhide-batch`:
 
 - **Request body**: `{ dialog_ids: number[] }`
-- **DB function**: `hide_dialogs(db, dialog_ids)` — single `UPDATE dialogs SET hidden_at = ? WHERE chat_id IN (...)` query
+- **DB function**: `hide_dialogs(db, dialog_ids)` — single `UPDATE dialogs SET hidden_at = ? WHERE id IN (...)` query (matches existing `unhide_dialogs` which uses `WHERE id IN (...)`)
 - **Response**: `{ success: true }`
 
 ### Frontend: Shift-Click Range Selection
 
 Reuse the existing `useSelectMode` hook (already battle-tested for media/people) in the Sidebar:
 
-- **Anchor tracking**: Every normal group click (toggle active) sets `lastClickedIdRef` via the hook
-- **Shift+click**: Calls `toggleRange(clickedId, visibleGroups)` — selects the range between anchor and clicked group, using the filtered/sorted group list as the ordered items array
+- **Anchor tracking**: Add a `setAnchor(id)` method to `useSelectMode` that sets `lastClickedIdRef` without modifying `selectedIds`. Every normal group click (toggle active) calls `setAnchor(g.id)` to track the last-clicked group.
+- **Shift+click**: Calls `toggleRange(clickedId, visibleGroups)` — selects the range between anchor and clicked group, using the filtered/sorted group list as the ordered items array. Selection mode is implicit — no explicit `enterSelectMode()` call needed; selection is considered active whenever `selectedIds.size > 0`.
 - **Visual state**: Selected groups get a distinct highlight (ring or subtle background) separate from the active/inactive blue styling, so both states are visible simultaneously
 - **Escape**: Clears the group selection via `deselectAll()`
-- **Normal click (no shift)**: Toggles active as usual, updates the anchor, clears any existing selection
+- **Normal click (no shift)**: Toggles active as usual, updates the anchor via `setAnchor()`, clears any existing selection
 - **Scope**: Selection only applies to the visible (non-hidden) group list. Hidden groups in the hidden section are not part of this selection.
 
 ### Bulk Actions on Selected Groups
@@ -34,7 +34,8 @@ When 1+ groups are selected:
 
 - **`h` hotkey**: Shows a confirmation dialog — "Hide N groups?" with Cancel/Hide buttons. On confirm, calls `hideDialogBatch(selectedIds)`, invalidates queries, clears selection
 - **Right-click context menu**: When right-clicking any selected group, shows a context menu with "Hide N groups" option. Same confirmation + batch hide flow as the hotkey
-- **Guard**: The `h` hotkey only fires when groups are selected — no conflict with other shortcuts
+- **Guard**: `h` is a global hotkey (like the existing `c` for collapse) guarded by `selectedIds.size > 0` — no conflict with other shortcuts
+- **Right-click implementation**: New context menu component via `onContextMenu` + `preventDefault`, separate from the existing `GroupOverflowMenu` (which handles single-group actions on hover)
 
 ### Cache Invalidation
 
