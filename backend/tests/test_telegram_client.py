@@ -198,3 +198,12 @@ async def test_acquire_and_release_semaphore(wrapper):
     assert wrapper._semaphore._value == 5
     wrapper.release_semaphore()
     assert wrapper._semaphore._value == 6
+
+
+@pytest.mark.asyncio
+async def test_available_slots(wrapper):
+    assert wrapper.available_slots() == 6
+    await wrapper.acquire_semaphore()
+    assert wrapper.available_slots() == 5
+    wrapper.release_semaphore()
+    assert wrapper.available_slots() == 6

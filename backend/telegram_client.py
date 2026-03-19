@@ -127,6 +127,10 @@ class TelegramClientWrapper:
     def release_semaphore(self):
         self._semaphore.release()
 
+    def available_slots(self) -> int:
+        """Number of free semaphore slots. Used by bulk cache to yield to on-demand requests."""
+        return self._semaphore._value
+
 
 def _dialog_type(dialog) -> str:
     if dialog.is_user:
