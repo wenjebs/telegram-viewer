@@ -28,6 +28,7 @@ interface Props {
     onPointerCancel: (e: React.PointerEvent) => void
   }
   selectionRect?: Rect | null
+  emptyReason?: 'search' | 'empty'
 }
 
 function PersonCard({
@@ -171,6 +172,7 @@ export default function PeopleGrid({
   containerRef,
   dragHandlers,
   selectionRect,
+  emptyReason = 'empty',
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null)
 
@@ -216,7 +218,9 @@ export default function PeopleGrid({
   if (persons.length === 0) {
     return (
       <p className="p-8 text-center text-text-soft">
-        No people found. Run a face scan to detect faces in your photos.
+        {emptyReason === 'search'
+          ? 'No matches'
+          : 'No people found. Run a face scan to detect faces in your photos.'}
       </p>
     )
   }

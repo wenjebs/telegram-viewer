@@ -62,4 +62,16 @@ describe('PeopleGrid', () => {
     )
     expect(screen.getByText('5 photos')).toBeTruthy()
   })
+
+  it('shows "No matches" when emptyReason is search', () => {
+    render(
+      <PeopleGrid
+        persons={[]}
+        loading={false}
+        onPersonClick={vi.fn()}
+        emptyReason="search"
+      />,
+    )
+    expect(screen.getByText(/No matches/)).toBeTruthy()
+  })
 })
