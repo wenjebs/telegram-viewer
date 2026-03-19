@@ -111,4 +111,78 @@ describe('CacheProgress', () => {
     fireEvent.click(screen.getByText(/cache all media/i))
     expect(startFn).toHaveBeenCalled()
   })
+
+  it('shows error state with message and retry button', () => {
+    const startFn = vi.fn()
+    mockUseCacheJob.mockReturnValue({
+      status: {
+        status: 'error',
+        total_items: 100,
+        cached_items: 80,
+        skipped_items: 0,
+        failed_items: 20,
+        bytes_cached: 5000000,
+        flood_wait_until: null,
+        error: 'Connection lost',
+      },
+      start: startFn,
+      pause: vi.fn(),
+      cancel: vi.fn(),
+      isRunning: false,
+      isPaused: false,
+      isCompleted: false,
+    })
+    renderWithWrapper(<CacheProgress />)
+    expect(screen.getByText(/error/i)).toBeInTheDocument()
+    expect(screen.getByText(/retry/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByText(/retry/i))
+    expect(startFn).toHaveBeenCalled()
+  })
+
+  it('shows failed count when items failed during running', () => {
+    mockUseCacheJob.mockReturnValue({
+      status: {
+        status: 'running',
+        total_items: 100,
+        cached_items: 95,
+        skipped_items: 0,
+        failed_items: 5,
+        bytes_cached: 5000000,
+        flood_wait_until: null,
+        error: null,
+      },
+      start: vi.fn(),
+      pause: vi.fn(),
+      cancel: vi.fn(),
+      isRunning: true,
+      isPaused: false,
+      isCompleted: false,
+    })
+    renderWithWrapper(<CacheProgress />)
+    expect(screen.getByText(/5 failed/i)).toBeInTheDocument()
+  })
+
+  it('shows completed state with failed count and retry', () => {
+    mockUseCacheJob.mockReturnValue({
+      status: {
+        status: 'completed',
+        total_items: 100,
+        cached_items: 95,
+        skipped_items: 0,
+        failed_items: 5,
+        bytes_cached: 5000000,
+        flood_wait_until: null,
+        error: null,
+      },
+      start: vi.fn(),
+      pause: vi.fn(),
+      cancel: vi.fn(),
+      isRunning: false,
+      isPaused: false,
+      isCompleted: true,
+    })
+    renderWithWrapper(<CacheProgress />)
+    expect(screen.getByText(/5 failed/i)).toBeInTheDocument()
+    expect(screen.getByText(/retry/i)).toBeInTheDocument()
+  })
 })

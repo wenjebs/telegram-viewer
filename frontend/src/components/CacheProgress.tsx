@@ -1,4 +1,4 @@
-import { Download, Pause, Play } from 'lucide-react'
+import { AlertTriangle, Download, Pause, Play, RotateCw } from 'lucide-react'
 import { useCacheJob } from '#/hooks/useCacheJob'
 
 export default function CacheProgress() {
@@ -6,12 +6,10 @@ export default function CacheProgress() {
 
   if (!status) return null
 
-  // Completed or cancelled — don't show anything
-  if (status.status === 'completed' || status.status === 'cancelled') {
-    return null
-  }
+  // Cancelled — hide
+  if (status.status === 'cancelled') return null
 
-  // Idle — show start button
+  // Idle with no history — show start button
   if (status.status === 'idle') {
     return (
       <button
@@ -24,6 +22,60 @@ export default function CacheProgress() {
       </button>
     )
   }
+
+  // Error state — show error message + retry
+  if (status.status === 'error') {
+    return (
+      <div className="rounded-md bg-surface-strong p-2 text-xs">
+        <div className="mb-1 flex items-center gap-1.5 text-danger">
+          <AlertTriangle className="size-3" />
+          <span>Cache error</span>
+        </div>
+        {status.error && (
+          <p className="mb-1.5 text-text-soft">{status.error}</p>
+        )}
+        <div className="flex items-center justify-between text-text-soft">
+          <span className="tabular-nums">
+            {status.cached_items} / {status.total_items}
+            {status.failed_items > 0 && <> · {status.failed_items} failed</>}
+          </span>
+          <button
+            type="button"
+            onClick={start}
+            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-accent transition-colors hover:bg-hover"
+          >
+            <RotateCw className="size-3" />
+            Retry
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // Completed with failures — show summary + retry
+  if (status.status === 'completed' && status.failed_items > 0) {
+    return (
+      <div className="rounded-md bg-surface-strong p-2 text-xs">
+        <div className="flex items-center justify-between">
+          <span className="text-text-soft tabular-nums">
+            {status.cached_items} / {status.total_items} cached ·{' '}
+            {status.failed_items} failed
+          </span>
+          <button
+            type="button"
+            onClick={start}
+            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-accent transition-colors hover:bg-hover"
+          >
+            <RotateCw className="size-3" />
+            Retry
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // Completed with no failures — hide
+  if (status.status === 'completed') return null
 
   // Running or paused — show progress
   const progress =
@@ -64,6 +116,9 @@ export default function CacheProgress() {
           ) : null}
         </div>
       </div>
+      {status.failed_items > 0 && (
+        <div className="mb-1 text-danger/80">{status.failed_items} failed</div>
+      )}
       <div className="h-1 w-full overflow-hidden rounded-sm bg-surface">
         <div
           className="h-full bg-accent transition-all duration-300"
