@@ -12,6 +12,8 @@ import {
   getPersonMediaIds,
   getCrossPersonConflicts,
   hideMediaBatch,
+  deleteMediaBatch,
+  deleteAllHidden,
 } from '#/api/client'
 import type { MediaItem, Person, ConflictsResponse } from '#/api/schemas'
 import { useSearchParams } from '#/hooks/useSearchParam'
@@ -70,6 +72,10 @@ function Home() {
     ConflictsResponse['conflicts'] | null
   >(null)
   const [pendingHideIds, setPendingHideIds] = useState<number[]>([])
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    type: 'selection' | 'all'
+    ids?: number[]
+  } | null>(null)
 
   const data = useHomeData()
 
@@ -258,6 +264,30 @@ function Home() {
     }
   }, [pendingHideIds, data])
 
+  const handleConfirmDelete = useCallback(async () => {
+    if (!deleteConfirm) return
+    try {
+      if (deleteConfirm.type === 'selection' && deleteConfirm.ids) {
+        const { deleted } = await deleteMediaBatch(deleteConfirm.ids)
+        data.hidden.removeItems(deleteConfirm.ids)
+        data.selectMode.exitSelectMode()
+        toast.success(
+          `Deleted ${deleted} ${deleted === 1 ? 'photo' : 'photos'} permanently`,
+        )
+      } else {
+        const { deleted } = await deleteAllHidden()
+        toast.success(`Deleted all ${deleted} hidden items`)
+      }
+      data.invalidateCounts()
+      data.invalidateActiveMedia()
+      data.persons.invalidate()
+    } catch {
+      toast.error('Failed to delete')
+    } finally {
+      setDeleteConfirm(null)
+    }
+  }, [deleteConfirm, data])
+
   // Render
   if (data.authenticated === null) return null
   if (!data.authenticated)
@@ -328,6 +358,8 @@ function Home() {
         <ViewModeHeader
           viewMode={data.viewMode}
           onClose={() => handlers.handleViewModeChange('normal')}
+          onDeleteAll={() => setDeleteConfirm({ type: 'all' })}
+          hiddenCount={data.hiddenCount}
         />
         <ActiveGroupChips
           groups={data.groups}
@@ -489,6 +521,33 @@ function Home() {
           />
         </Suspense>
       )}
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="mx-4 max-w-sm rounded-xl border border-border bg-surface p-6 shadow-2xl">
+            <p className="text-sm text-text">
+              {deleteConfirm.type === 'selection'
+                ? `Permanently delete ${deleteConfirm.ids?.length ?? 0} ${(deleteConfirm.ids?.length ?? 0) === 1 ? 'photo' : 'photos'}? This cannot be undone.`
+                : `Permanently delete all ${data.hiddenCount} hidden items? This cannot be undone.`}
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                className="rounded-lg px-4 py-1.5 text-sm text-text-soft hover:bg-hover"
+                onClick={() => setDeleteConfirm(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className="rounded-lg bg-danger px-4 py-1.5 text-sm font-semibold text-white hover:bg-danger/80"
+                onClick={handleConfirmDelete}
+              >
+                {deleteConfirm.type === 'selection'
+                  ? 'Delete forever'
+                  : 'Delete all'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {data.selectMode.active && (
         <Suspense>
           <SelectionBar
@@ -499,6 +558,15 @@ function Home() {
             onCancel={data.selectMode.exitSelectMode}
             selectedIds={data.selectMode.selectedIds}
             viewMode={data.viewMode}
+            onDelete={
+              data.viewMode === 'hidden'
+                ? () =>
+                    setDeleteConfirm({
+                      type: 'selection',
+                      ids: [...data.selectMode.selectedIds],
+                    })
+                : undefined
+            }
             onBeforeHide={
               data.viewMode === 'people' && data.selectedPerson
                 ? async () => {
