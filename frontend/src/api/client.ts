@@ -1,6 +1,7 @@
 import { z, ZodError } from 'zod'
 import {
   AuthStatus,
+  ConflictsResponse,
   CountResponse,
   FaceScanStatus,
   IdsResponse,
@@ -414,6 +415,24 @@ export const mergePersonsBatch = (keepId: number, mergeIds: number[]) =>
 export const removeFaceFromPerson = (personId: number, faceId: number) =>
   fetchJSON(`/faces/persons/${personId}/faces/${faceId}`, SuccessResponse, {
     method: 'DELETE',
+  })
+
+export const deletePerson = (personId: number) =>
+  fetchJSON(`/faces/persons/${personId}`, SuccessResponse, {
+    method: 'DELETE',
+  })
+
+export const getCrossPersonConflicts = (
+  mediaIds: number[],
+  excludePersonId: number,
+) =>
+  fetchJSON('/faces/persons/conflicts', ConflictsResponse, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      media_ids: mediaIds,
+      exclude_person_id: excludePersonId,
+    }),
   })
 
 export const getFaceCropUrl = (faceId: number, updatedAt?: string) =>

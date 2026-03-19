@@ -98,6 +98,20 @@ export const ImportResult = z.object({
   }),
 })
 
+export const ConflictPerson = z.object({
+  id: z.number(),
+  display_name: z.string(),
+})
+
+export const ConflictsResponse = z.object({
+  conflicts: z.array(
+    z.object({
+      media_id: z.number(),
+      persons: z.array(ConflictPerson),
+    }),
+  ),
+})
+
 // --- Inferred types (exported for consumers) ---
 export type AuthStatus = z.infer<typeof AuthStatus>
 export type Group = z.infer<typeof Group>
@@ -112,3 +126,5 @@ export type PreviewCountItem = z.infer<typeof PreviewCountItem>
 export type PreviewCounts = z.infer<typeof PreviewCounts>
 export type IdsResponse = z.infer<typeof IdsResponse>
 export type ImportResult = z.infer<typeof ImportResult>
+export type ConflictPerson = z.infer<typeof ConflictPerson>
+export type ConflictsResponse = z.infer<typeof ConflictsResponse>
