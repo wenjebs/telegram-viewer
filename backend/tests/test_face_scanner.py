@@ -208,6 +208,10 @@ async def test_cluster_faces_creates_persons(db):
             "confidence": 0.9,
             "crop_path": None,
             "created_at": now,
+            "pitch": None,
+            "yaw": None,
+            "roll": None,
+            "sharpness": None,
         }
         for i in range(6)
     ]
@@ -247,6 +251,10 @@ async def test_cluster_faces_purges_low_confidence(db):
             "confidence": 0.1,  # Below MIN_CONFIDENCE
             "crop_path": "/tmp/low_conf.jpg",
             "created_at": now,
+            "pitch": None,
+            "yaw": None,
+            "roll": None,
+            "sharpness": None,
         }
     ]
     await insert_faces_batch(db, face_rows)
@@ -283,6 +291,10 @@ async def test_cluster_faces_noise_excluded(db):
             "confidence": 0.9,
             "crop_path": None,
             "created_at": now,
+            "pitch": None,
+            "yaw": None,
+            "roll": None,
+            "sharpness": None,
         }
         for i in range(3)
     ]
@@ -368,6 +380,10 @@ async def test_scan_faces_force_rescan(db, mock_face_app):
                 "confidence": 0.9,
                 "crop_path": None,
                 "created_at": now,
+                "pitch": None,
+                "yaw": None,
+                "roll": None,
+                "sharpness": None,
             }
         ],
     )
@@ -489,6 +505,87 @@ async def test_scan_faces_status_updates_every_5(db, mock_face_app):
 # ---------------------------------------------------------------------------
 # _download_for_scan
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_scan_faces_recounts_total_when_new_photos_arrive(db, mock_face_app):
+    """Total is updated when new unscanned photos appear during scanning."""
+    # Insert 6 initial photos
+    for i in range(6):
+        await insert_media_item(
+            db,
+            make_media_item(
+                message_id=i,
+                chat_id=1,
+                date=f"2026-03-{10 + i}T10:00:00",
+                file_id=i * 10,
+                access_hash=i * 100,
+                thumbnail_path=f"/tmp/photo_{i}.jpg",
+            ),
+        )
+
+    tg = AsyncMock()
+
+    # Track update_face_scan_state calls to inspect total_count values
+    update_calls = []
+    original_update = update_face_scan_state
+
+    async def tracking_update(db_conn, **kwargs):
+        update_calls.append(kwargs)
+        await original_update(db_conn, **kwargs)
+
+    # After the first batch is scanned, inject 4 more unscanned photos
+    # to simulate a concurrent media sync
+    original_get_unscanned = None
+    batch_call_count = 0
+
+    async def get_unscanned_with_injection(db_conn, limit=20):
+        nonlocal batch_call_count
+        batch_call_count += 1
+        if batch_call_count == 2:
+            # Inject new photos mid-scan (simulating concurrent sync)
+            for i in range(6, 10):
+                await insert_media_item(
+                    db_conn,
+                    make_media_item(
+                        message_id=i,
+                        chat_id=1,
+                        date=f"2026-03-{20 + i}T10:00:00",
+                        file_id=i * 10,
+                        access_hash=i * 100,
+                        thumbnail_path=f"/tmp/photo_{i}.jpg",
+                    ),
+                )
+            await db_conn.commit()
+        from database import get_unscanned_photos as real_get
+
+        return await real_get(db_conn, limit)
+
+    with (
+        patch("face_scanner._detect_faces_in_image", return_value=[]),
+        patch("face_scanner.cluster_faces", new_callable=AsyncMock),
+        patch("face_scanner.update_face_scan_state", side_effect=tracking_update),
+        patch("face_scanner.get_unscanned_photos", side_effect=get_unscanned_with_injection),
+        patch("face_scanner.Path") as MockPath,
+    ):
+        mock_path_inst = MagicMock()
+        mock_path_inst.exists.return_value = True
+        MockPath.return_value = mock_path_inst
+
+        from face_scanner import scan_faces
+
+        await scan_faces(db, tg)
+
+    # Find the final progress update (last one with both scanned_count and total_count)
+    progress_updates = [
+        c for c in update_calls if "scanned_count" in c and "total_count" in c
+    ]
+    assert len(progress_updates) > 0
+    final = progress_updates[-1]
+    # scanned should never exceed total
+    assert final["scanned_count"] <= final["total_count"], (
+        f"scanned ({final['scanned_count']}) should not exceed total ({final['total_count']})"
+    )
 
 
 @pytest.mark.asyncio

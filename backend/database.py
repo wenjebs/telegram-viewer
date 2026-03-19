@@ -91,7 +91,11 @@ CREATE TABLE IF NOT EXISTS faces (
     bbox_h          REAL NOT NULL,
     confidence      REAL NOT NULL,
     crop_path       TEXT,
-    created_at      DATETIME NOT NULL
+    created_at      DATETIME NOT NULL,
+    pitch           REAL,
+    yaw             REAL,
+    roll            REAL,
+    sharpness       REAL
 );
 
 CREATE INDEX IF NOT EXISTS idx_faces_media ON faces(media_id);
@@ -176,7 +180,8 @@ async def _migrate_to_autoincrement(db: aiosqlite.Connection) -> None:
             bbox_x REAL NOT NULL, bbox_y REAL NOT NULL,
             bbox_w REAL NOT NULL, bbox_h REAL NOT NULL,
             confidence REAL NOT NULL, crop_path TEXT,
-            created_at DATETIME NOT NULL
+            created_at DATETIME NOT NULL,
+            pitch REAL, yaw REAL, roll REAL, sharpness REAL
         )""",
         "INSERT INTO faces_new SELECT * FROM faces",
         "DROP TABLE faces",
@@ -206,6 +211,10 @@ async def init_db(db: aiosqlite.Connection) -> None:
         "ALTER TABLE media_items ADD COLUMN face_count INTEGER DEFAULT NULL",
         "CREATE INDEX IF NOT EXISTS idx_media_face_count ON media_items(face_count)",
         "CREATE INDEX IF NOT EXISTS idx_media_unscanned ON media_items(media_type, faces_scanned)",
+        "ALTER TABLE faces ADD COLUMN pitch REAL",
+        "ALTER TABLE faces ADD COLUMN yaw REAL",
+        "ALTER TABLE faces ADD COLUMN roll REAL",
+        "ALTER TABLE faces ADD COLUMN sharpness REAL",
     ]:
         try:
             await db.execute(migration)
@@ -1017,11 +1026,11 @@ async def insert_faces_batch(db: aiosqlite.Connection, faces: list[dict]) -> lis
     """Insert face rows, return their IDs."""
     if not faces:
         return []
-    cols = "media_id, embedding, bbox_x, bbox_y, bbox_w, bbox_h, confidence, crop_path, created_at"
+    cols = "media_id, embedding, bbox_x, bbox_y, bbox_w, bbox_h, confidence, crop_path, created_at, pitch, yaw, roll, sharpness"
     keys = ["media_id", "embedding", "bbox_x", "bbox_y", "bbox_w", "bbox_h",
-            "confidence", "crop_path", "created_at"]
+            "confidence", "crop_path", "created_at", "pitch", "yaw", "roll", "sharpness"]
     single = f"({', '.join('?' for _ in keys)})"
-    chunk_size = 100  # 100 * 9 cols = 900 params, under SQLite's 999 limit
+    chunk_size = 76  # 76 * 13 cols = 988 params, under SQLite's 999 limit
     all_ids: list[int] = []
     for i in range(0, len(faces), chunk_size):
         chunk = faces[i:i + chunk_size]

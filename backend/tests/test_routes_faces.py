@@ -30,7 +30,7 @@ def _make_embedding() -> bytes:
     return np.random.default_rng(42).standard_normal(512).astype(np.float32).tobytes()
 
 
-async def _seed_person(db, *, name=None, face_count=2, media_id=1):
+async def _seed_person(db, *, name=None, face_count=2, media_id=1, sharpness=None):
     """Insert a person with `face_count` faces linked to `media_id`. Returns person_id."""
     now = utc_now_iso()
     face_rows = [
@@ -44,6 +44,10 @@ async def _seed_person(db, *, name=None, face_count=2, media_id=1):
             "confidence": 0.9,
             "crop_path": f"/tmp/face_crop_{i}.jpg",
             "created_at": now,
+            "pitch": None,
+            "yaw": None,
+            "roll": None,
+            "sharpness": sharpness,
         }
         for i in range(face_count)
     ]
@@ -354,6 +358,10 @@ async def test_similar_groups_with_identical_embeddings(face_db):
                 "confidence": 0.9,
                 "crop_path": None,
                 "created_at": now,
+                "pitch": None,
+                "yaw": None,
+                "roll": None,
+                "sharpness": None,
             }
         ]
         fids = await insert_faces_batch(db, face_rows)
@@ -401,6 +409,10 @@ async def test_person_media_pagination(face_db):
                 "confidence": 0.9,
                 "crop_path": None,
                 "created_at": now,
+                "pitch": None,
+                "yaw": None,
+                "roll": None,
+                "sharpness": None,
             }
         )
     fids = await insert_faces_batch(db, face_rows)
@@ -452,6 +464,10 @@ async def test_person_media_faces_filter(face_db):
                 "confidence": 0.9,
                 "crop_path": None,
                 "created_at": now,
+                "pitch": None,
+                "yaw": None,
+                "roll": None,
+                "sharpness": None,
             }
         )
     fids = await insert_faces_batch(db, face_rows)
@@ -537,6 +553,10 @@ async def test_get_face_crop_file_exists(face_db, tmp_path):
             "confidence": 0.9,
             "crop_path": str(crop_file),
             "created_at": now,
+            "pitch": None,
+            "yaw": None,
+            "roll": None,
+            "sharpness": None,
         }
     ]
     fids = await insert_faces_batch(db, face_rows)
@@ -573,6 +593,10 @@ async def test_get_face_crop_404_file_missing(face_db):
             "confidence": 0.9,
             "crop_path": "/nonexistent/path.jpg",
             "created_at": now,
+            "pitch": None,
+            "yaw": None,
+            "roll": None,
+            "sharpness": None,
         }
     ]
     fids = await insert_faces_batch(db, face_rows)
