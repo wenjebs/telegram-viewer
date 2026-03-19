@@ -15,7 +15,7 @@ Location: `backend/database.py`
 ```python
 async def delete_media_items_permanently(
     db: aiosqlite.Connection, media_ids: list[int]
-) -> list[str]:
+) -> tuple[int, list[str]]:
 ```
 
 **Behavior:**
