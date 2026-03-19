@@ -76,6 +76,24 @@ export const ZipStatusResponse = z.object({
   error: z.string().nullable(),
 })
 
+export const CacheJobStatus = z.object({
+  status: z.enum([
+    'idle',
+    'running',
+    'paused',
+    'completed',
+    'cancelled',
+    'error',
+  ]),
+  total_items: z.number(),
+  cached_items: z.number(),
+  skipped_items: z.number(),
+  failed_items: z.number(),
+  bytes_cached: z.number(),
+  flood_wait_until: z.string().nullable(),
+  error: z.string().nullable(),
+})
+
 export const PreviewCountItem = z.object({
   photos: z.number(),
   videos: z.number(),
@@ -123,6 +141,7 @@ export type Person = z.infer<typeof Person>
 export type FaceScanStatus = z.infer<typeof FaceScanStatus>
 export type ZipJobResponse = z.infer<typeof ZipJobResponse>
 export type ZipStatusResponse = z.infer<typeof ZipStatusResponse>
+export type CacheJobStatus = z.infer<typeof CacheJobStatus>
 export type PreviewCountItem = z.infer<typeof PreviewCountItem>
 export type PreviewCounts = z.infer<typeof PreviewCounts>
 export type IdsResponse = z.infer<typeof IdsResponse>

@@ -1,5 +1,6 @@
 import {
   AuthStatus,
+  CacheJobStatus,
   CountResponse,
   FaceScanStatus,
   Group,
@@ -265,6 +266,28 @@ describe('ZipStatusResponse', () => {
       error: 'something went wrong',
     }
     expect(ZipStatusResponse.parse(data).error).toBe('something went wrong')
+  })
+})
+
+describe('CacheJobStatus', () => {
+  it('parses a valid running status', () => {
+    const data = {
+      status: 'running',
+      total_items: 100,
+      cached_items: 42,
+      skipped_items: 10,
+      failed_items: 2,
+      bytes_cached: 5000000,
+      flood_wait_until: null,
+      error: null,
+    }
+    expect(CacheJobStatus.parse(data)).toEqual(data)
+  })
+
+  it('rejects invalid status', () => {
+    expect(() =>
+      CacheJobStatus.parse({ status: 'bogus', total_items: 0 }),
+    ).toThrow()
   })
 })
 

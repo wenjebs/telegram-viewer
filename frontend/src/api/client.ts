@@ -1,6 +1,7 @@
 import { z, ZodError } from 'zod'
 import {
   AuthStatus,
+  CacheJobStatus,
   ConflictsResponse,
   CountResponse,
   DeleteResponse,
@@ -361,6 +362,36 @@ export const getZipStatus = (jobId: string) =>
 
 export const getZipDownloadUrl = (jobId: string) =>
   `${BASE}/media/zip-download/${jobId}`
+
+// Bulk cache
+export const getCacheStatus = () =>
+  fetchJSON('/media/cache/status', CacheJobStatus)
+
+export const startCacheJob = () =>
+  fetchJSON(
+    '/media/cache/start',
+    z.object({
+      status: z.string(),
+      total_items: z.number(),
+      cached_items: z.number(),
+      skipped_items: z.number(),
+    }),
+    { method: 'POST' },
+  )
+
+export const pauseCacheJob = () =>
+  fetchJSON(
+    '/media/cache/pause',
+    z.object({ status: z.string() }),
+    { method: 'POST' },
+  )
+
+export const cancelCacheJob = () =>
+  fetchJSON(
+    '/media/cache/cancel',
+    z.object({ status: z.string() }),
+    { method: 'POST' },
+  )
 
 // Faces
 export const getFaceScanStatus = () =>
