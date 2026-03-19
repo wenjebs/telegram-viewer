@@ -128,6 +128,8 @@ describe('PeopleToolbar', () => {
     scanning: false,
     scanProgress: { scanned: 0, total: 0 },
     onStartScan: vi.fn(),
+    searchQuery: '',
+    onSearchChange: vi.fn(),
     similarityThreshold: 0.4,
     onThresholdChange: vi.fn(),
     mergeSelectActive: false,
