@@ -476,7 +476,10 @@ function Home() {
             onPrev={data.lightbox.handlePrev}
             onNext={data.lightbox.handleNext}
             hasPrev={data.lightbox.selectedIndex > 0}
-            hasNext={data.lightbox.selectedIndex < data.activeItems.length - 1}
+            hasNext={
+              data.lightbox.selectedIndex < data.activeItems.length - 1 ||
+              data.activeHasMore
+            }
             selected={data.selectMode.isSelected(data.lightbox.selectedItem.id)}
             favorited={!!data.lightbox.selectedItem.favorited_at}
             onToggleSelect={data.lightbox.handleToggleSelect}
