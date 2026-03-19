@@ -31,7 +31,10 @@ async def delete_media_items_permanently(
 **Key details:**
 - Photos are gone from the database entirely — no ghost rows
 - Persons with no remaining faces are auto-deleted (cleanup, not a feature the user sees)
+- For surviving persons whose `representative_face_id` pointed to a deleted face: reassign to another face in the same person (e.g., `MIN(id)` of remaining faces)
+- No need to recount `face_count` on `media_items` since those rows are about to be deleted anyway
 - File paths are collected before deletion so the caller can clean up after commit
+- Returns the count of rows actually deleted (not the count of IDs requested — silently ignores IDs that don't exist)
 - Follows established pattern from `delete_person` and `clear_chat_media`
 
 ### API Endpoints
@@ -40,8 +43,9 @@ Location: `backend/routes/media.py`
 
 **`DELETE /media/delete-batch`**
 - Request body: `{"media_ids": [1, 2, 3]}` (reuses `BatchIdsRequest` model with non-empty validation)
+- **Safety guard:** The endpoint filters the requested IDs to only those with `hidden_at IS NOT NULL` before passing to `delete_media_items_permanently`. This enforces the "hidden view only" scope at the backend level — non-hidden items cannot be permanently deleted via this endpoint.
 - Calls `delete_media_items_permanently`, cleans up files on disk
-- Response: `{"deleted": <count>}`
+- Response: `{"deleted": <count>}` (count of rows actually deleted)
 - File cleanup: iterate returned paths, `Path(path).unlink(missing_ok=True)` with OSError logging (same pattern as `delete_person_endpoint`)
 
 **`DELETE /media/hidden`**
@@ -49,6 +53,7 @@ Location: `backend/routes/media.py`
 - Fetches all hidden media IDs via `get_hidden_media_ids`, then calls `delete_media_items_permanently`
 - Response: `{"deleted": <count>}`
 - Same file cleanup pattern
+- Note: the count shown in the confirmation dialog is advisory. If items are unhidden between dialog display and confirmation, the endpoint deletes whatever is currently hidden — this is acceptable behavior.
 
 Both endpoints: DB transaction first, file cleanup after commit.
 
@@ -88,13 +93,17 @@ New prop: `onDelete?: () => void`
 
 When `viewMode === 'hidden'` and `onDelete` is provided, render the Delete button alongside Unhide.
 
+Keyboard shortcut: `Backspace` or `Delete` key triggers the delete action when in hidden mode select (follows keyboard-first design principle).
+
 ### ViewModeHeader Changes
 
 Location: `frontend/src/components/ViewModeHeader.tsx`
 
 When `mode === 'hidden'`, add a "Delete All" button in the header row (next to the close button). Styled as danger (red text).
 
-New props: `onDeleteAll?: () => void`
+New props: `onDeleteAll?: () => void`, `hiddenCount?: number`
+
+The "Delete All" button is disabled when `hiddenCount === 0`.
 
 ### Confirmation Dialogs
 
@@ -112,7 +121,7 @@ Triggered by: SelectionBar "Delete" button click. On confirm: calls `deleteMedia
 
 Triggered by: ViewModeHeader "Delete All" button click. Uses `data.hiddenCount` for the number. On confirm: calls `deleteAllHidden`, invalidates hidden media + counts, shows success toast.
 
-Both dialogs: fixed overlay, centered card, same styling as existing confirmation dialogs (e.g., PersonDetail delete confirm).
+Both dialogs are inline JSX in `index.tsx` (fixed overlay, centered card) — same pattern as the PersonDetail delete confirmation. Not a reusable component; the codebase uses inline dialogs for one-off confirmations and `window.confirm()` for simpler cases. These warrant custom dialogs because of the destructive + irreversible nature.
 
 ### Post-Deletion Invalidation
 
