@@ -50,6 +50,7 @@ from database import (
     get_unscanned_photos,
     get_unscanned_photo_count,
     get_total_photo_count,
+    delete_media_items_permanently,
 )
 from helpers import make_media_item
 from utils import utc_now_iso
@@ -1344,3 +1345,114 @@ class TestGetCrossPersonConflicts:
 
         for c in conflicts:
             assert all(p["id"] != p1 for p in c["persons"])
+
+
+# ---------------------------------------------------------------------------
+# Permanent delete
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_delete_media_items_permanently_removes_rows(db):
+    await insert_media_item(db, make_media_item(
+        message_id=1, chat_id=1, thumbnail_path="/tmp/thumb1.jpg",
+    ))
+    await insert_media_item(db, make_media_item(
+        message_id=2, chat_id=1, thumbnail_path="/tmp/thumb2.jpg",
+    ))
+    items = await get_media_page(db, limit=10)
+    ids = [item["id"] for item in items]
+
+    # Hide them first
+    await hide_media_items(db, ids)
+
+    deleted, paths = await delete_media_items_permanently(db, ids)
+
+    assert deleted == 2
+    assert "/tmp/thumb1.jpg" in paths
+    assert "/tmp/thumb2.jpg" in paths
+    # Rows are gone
+    assert await get_media_by_id(db, ids[0]) is None
+    assert await get_media_by_id(db, ids[1]) is None
+
+
+@pytest.mark.asyncio
+async def test_delete_media_items_permanently_cleans_faces(db):
+    await insert_media_item(db, make_media_item(message_id=1, chat_id=1))
+    item = (await get_media_page(db, limit=1))[0]
+    face = _make_face(item["id"])
+    face["crop_path"] = "/tmp/crop.jpg"
+    await insert_faces_batch(db, [face])
+    await bulk_assign_persons(db, [{"face_ids": [1], "representative_face_id": 1}])
+    await db.commit()
+
+    await hide_media_items(db, [item["id"]])
+    deleted, paths = await delete_media_items_permanently(db, [item["id"]])
+
+    assert deleted == 1
+    assert "/tmp/crop.jpg" in paths
+    # Face row gone
+    cursor = await db.execute("SELECT COUNT(*) FROM faces WHERE media_id = ?", (item["id"],))
+    assert (await cursor.fetchone())[0] == 0
+    # Person auto-deleted (had only one face)
+    assert len(await get_all_persons(db)) == 0
+
+
+@pytest.mark.asyncio
+async def test_delete_media_items_permanently_reassigns_representative_face(db):
+    """When a person loses their representative face but has remaining faces, reassign it."""
+    await insert_media_item(db, make_media_item(message_id=1, chat_id=1))
+    await insert_media_item(db, make_media_item(message_id=2, chat_id=1, file_id=2))
+    items = await get_media_page(db, limit=10)
+
+    face1 = _make_face(items[0]["id"])
+    face1["crop_path"] = "/tmp/crop1.jpg"
+    face2 = _make_face(items[1]["id"])
+    face2["crop_path"] = "/tmp/crop2.jpg"
+    face_ids = await insert_faces_batch(db, [face1, face2])
+    await bulk_assign_persons(
+        db, [{"face_ids": face_ids, "representative_face_id": face_ids[0]}]
+    )
+    await db.commit()
+
+    # Hide and delete only the first media item (which has the representative face)
+    await hide_media_items(db, [items[0]["id"]])
+    deleted, paths = await delete_media_items_permanently(db, [items[0]["id"]])
+
+    assert deleted == 1
+    # Person still exists with face_count=1
+    persons = await get_all_persons(db)
+    assert len(persons) == 1
+    # Representative face has been reassigned to the surviving face
+    assert persons[0]["representative_face_id"] == face_ids[1]
+
+
+@pytest.mark.asyncio
+async def test_delete_media_items_permanently_returns_download_paths(db):
+    await insert_media_item(db, make_media_item(message_id=1, chat_id=1))
+    item = (await get_media_page(db, limit=1))[0]
+    await db.execute(
+        "UPDATE media_items SET download_path = ? WHERE id = ?",
+        ("/tmp/dl.mp4", item["id"]),
+    )
+    await db.commit()
+
+    await hide_media_items(db, [item["id"]])
+    deleted, paths = await delete_media_items_permanently(db, [item["id"]])
+
+    assert deleted == 1
+    assert "/tmp/dl.mp4" in paths
+
+
+@pytest.mark.asyncio
+async def test_delete_media_items_permanently_nonexistent_ids(db):
+    deleted, paths = await delete_media_items_permanently(db, [99999])
+    assert deleted == 0
+    assert paths == []
+
+
+@pytest.mark.asyncio
+async def test_delete_media_items_permanently_empty_list(db):
+    deleted, paths = await delete_media_items_permanently(db, [])
+    assert deleted == 0
+    assert paths == []

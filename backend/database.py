@@ -665,6 +665,88 @@ async def get_hidden_media_ids(
     return [row[0] for row in rows]
 
 
+async def delete_media_items_permanently(
+    db: aiosqlite.Connection, media_ids: list[int]
+) -> tuple[int, list[str]]:
+    """Permanently delete media items and all associated data.
+
+    Returns (deleted_count, file_paths_for_cleanup).
+    """
+    if not media_ids:
+        return 0, []
+
+    placeholders = ", ".join("?" for _ in media_ids)
+
+    # 1. Collect file paths before deletion
+    async with await db.execute(
+        f"SELECT thumbnail_path, download_path FROM media_items "
+        f"WHERE id IN ({placeholders}) "
+        f"AND (thumbnail_path IS NOT NULL OR download_path IS NOT NULL)",
+        media_ids,
+    ) as cursor:
+        rows = await cursor.fetchall()
+    paths = [p for row in rows for p in (row[0], row[1]) if p]
+
+    # 2. Collect crop paths from faces
+    async with await db.execute(
+        f"SELECT crop_path FROM faces "
+        f"WHERE media_id IN ({placeholders}) AND crop_path IS NOT NULL",
+        media_ids,
+    ) as cursor:
+        paths += [row[0] for row in await cursor.fetchall()]
+
+    # 3. Collect affected person IDs
+    async with await db.execute(
+        f"SELECT DISTINCT person_id FROM faces "
+        f"WHERE media_id IN ({placeholders}) AND person_id IS NOT NULL",
+        media_ids,
+    ) as cursor:
+        affected_person_ids = [row[0] for row in await cursor.fetchall()]
+
+    # 4. Delete faces
+    await db.execute(
+        f"DELETE FROM faces WHERE media_id IN ({placeholders})", media_ids
+    )
+
+    # 5. Update affected persons: recount faces, delete empty, reassign representative
+    if affected_person_ids:
+        p_placeholders = ", ".join("?" for _ in affected_person_ids)
+        now = utc_now_iso()
+
+        # Delete persons with no remaining faces
+        await db.execute(
+            f"DELETE FROM persons WHERE id IN ({p_placeholders}) "
+            f"AND id NOT IN (SELECT DISTINCT person_id FROM faces WHERE person_id IS NOT NULL)",
+            affected_person_ids,
+        )
+
+        # Recount face_count for surviving persons
+        await db.execute(
+            f"UPDATE persons SET face_count = ("
+            f"  SELECT COUNT(*) FROM faces WHERE person_id = persons.id"
+            f"), updated_at = ? WHERE id IN ({p_placeholders})",
+            [now, *affected_person_ids],
+        )
+
+        # Reassign representative_face_id for surviving persons whose representative was deleted
+        await db.execute(
+            f"UPDATE persons SET representative_face_id = ("
+            f"  SELECT MIN(id) FROM faces WHERE person_id = persons.id"
+            f") WHERE id IN ({p_placeholders}) "
+            f"AND representative_face_id NOT IN (SELECT id FROM faces)",
+            affected_person_ids,
+        )
+
+    # 6. Delete media items
+    async with await db.execute(
+        f"DELETE FROM media_items WHERE id IN ({placeholders})", media_ids
+    ) as cursor:
+        deleted_count = cursor.rowcount
+
+    await db.commit()
+    return deleted_count, paths
+
+
 # endregion
 
 
