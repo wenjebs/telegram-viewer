@@ -8,7 +8,6 @@ import {
 import { theme } from '../shared/theme'
 
 const COLS = 4
-const ROWS = 4
 const GAP = 6
 const TILE_SIZE = 150
 
@@ -39,9 +38,6 @@ export const MediaGrid: React.FC = () => {
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
   })
-
-  const gridWidth = COLS * TILE_SIZE + (COLS - 1) * GAP
-  const gridLeft = (1280 - gridWidth) / 2
 
   return (
     <AbsoluteFill
