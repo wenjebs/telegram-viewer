@@ -1,4 +1,4 @@
-import { AlertTriangle, Download, Pause, Play, RotateCw } from 'lucide-react'
+import { AlertTriangle, Pause, Play, RotateCw } from 'lucide-react'
 import { useCacheJob } from '#/hooks/useCacheJob'
 
 export default function CacheProgress() {
@@ -6,22 +6,8 @@ export default function CacheProgress() {
 
   if (!status) return null
 
-  // Cancelled — hide
-  if (status.status === 'cancelled') return null
-
-  // Idle with no history — show start button
-  if (status.status === 'idle') {
-    return (
-      <button
-        type="button"
-        onClick={start}
-        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-text-soft transition-colors hover:bg-hover"
-      >
-        <Download className="size-3.5" />
-        Cache all media
-      </button>
-    )
-  }
+  // Cancelled or idle — nothing to show in sidebar (start from Settings)
+  if (status.status === 'cancelled' || status.status === 'idle') return null
 
   // Error state — show error message + retry
   if (status.status === 'error') {

@@ -150,12 +150,7 @@ describe('useSelectMode', () => {
     expect(result.current.selectedIds.size).toBe(0)
 
     // Now shift-click (toggleRange) should use 5 as anchor
-    const items = [
-      { id: 3 },
-      { id: 5 },
-      { id: 7 },
-      { id: 9 },
-    ]
+    const items = [{ id: 3 }, { id: 5 }, { id: 7 }, { id: 9 }]
     act(() => result.current.toggleRange(9, items))
 
     // Should select range from 5 to 9: ids 5, 7, 9

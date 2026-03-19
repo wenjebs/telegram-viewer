@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 
 interface ShortcutGroup {
   title: string
+  note?: string
   shortcuts: { key: string; description: string }[]
 }
 
@@ -9,6 +10,7 @@ const groups: ShortcutGroup[] = [
   {
     title: 'General',
     shortcuts: [
+      { key: ',', description: 'Toggle settings' },
       { key: '?', description: 'Show keyboard shortcuts' },
       { key: '/', description: 'Toggle filters panel' },
       { key: 'C', description: 'Toggle chats panel' },
@@ -37,6 +39,21 @@ const groups: ShortcutGroup[] = [
     shortcuts: [
       { key: 'H', description: 'Hide selected items' },
       { key: 'F', description: 'Toggle favorite' },
+    ],
+  },
+  {
+    title: 'People select mode',
+    shortcuts: [
+      { key: 'D', description: 'Delete selected people' },
+      { key: 'M', description: 'Merge selected people' },
+    ],
+  },
+  {
+    title: 'People view',
+    note: 'Similarity controls how closely faces must match to be grouped as the same person. Higher = stricter matching.',
+    shortcuts: [
+      { key: 'S+\u2191', description: 'Increase similarity threshold' },
+      { key: 'S+\u2193', description: 'Decrease similarity threshold' },
     ],
   },
 ]
@@ -84,9 +101,12 @@ export default function ShortcutsModal({ onClose }: Props) {
         <div className="flex flex-col gap-4">
           {groups.map((group) => (
             <div key={group.title}>
-              <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-text-soft">
+              <h3 className="mb-1 text-xs font-medium uppercase tracking-wider text-text-soft">
                 {group.title}
               </h3>
+              {group.note && (
+                <p className="mb-2 text-xs text-text-soft/70">{group.note}</p>
+              )}
               <div className="flex flex-col gap-1.5">
                 {group.shortcuts.map((s) => (
                   <div

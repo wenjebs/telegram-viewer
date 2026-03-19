@@ -20,21 +20,22 @@ React 19, TanStack Start/Router (file-based routing), TanStack Query (data fetch
 - **PersonMergeModal** — modal for merging two person records, moves all faces from source to target
 - **CrossPersonWarningModal** — warning modal when hiding media that has faces belonging to other persons, shows affected persons
 - **PhotoContextMenu** — right-click context menu for photos in people view (hide with cross-person check, favorite, download)
-- **ShortcutsModal** — keyboard shortcuts reference modal (opened via `?` / shift+slash), lists all app hotkeys grouped by context (General, Lightbox, Selection mode)
+- **ShortcutsModal** — keyboard shortcuts reference modal (opened via `?` / shift+slash), lists all app hotkeys grouped by context (General, Lightbox, Selection mode, People select mode, People view). Supports optional `note` field per group for extra context.
 - **KeepPersonPicker** — modal to select which person to keep when merging duplicate persons
 - **GroupOverflowMenu** — overflow menu for group actions (hide, unsync)
 - **ThemeToggle** — theme switcher (light/dark/system) with icon cycling
 - **ViewModeTabs** — tab bar for switching between Gallery, Hidden, Favorites, and People modes with item counts
 - **SegmentedControl** — reusable button group for filter options (media type, chat type, sync status, faces filter)
-- **SettingsPanel** — slide-out panel (lazy-loaded) for theme toggle and backup/restore settings (export/import JSON)
+- **SettingsPanel** — slide-out panel (lazy-loaded, toggled via `,` key) for theme toggle, cache start button, and backup/restore settings (export/import JSON)
 - **EmptyState** — getting-started guidance (3 steps: pick chats, sync, browse) for initial empty gallery
 - **SkeletonGroup** — animated skeleton loader for media grid showing fake date header and thumbnail grid
 - **ActiveGroupChips** — chip bar showing active syncing groups with click-to-deactivate and "Show all" deselect-all action
 - **ViewModeHeader** — banner for hidden/favorites view modes with icon, close button, and Delete All button (hidden mode)
 - **PersonBreadcrumb** — selected person name header with back button
 - **MediaToolbar** — item count, select mode toggle, sort order button
-- **PeopleToolbar** — face scan button, similarity threshold input, select/deselect all/close buttons
-- **PersonMergeBar** — fixed bottom bar for person merge select mode with select all/deselect/merge/exit
+- **PeopleToolbar** — face scan button, search input, similarity threshold slider with S+↑↓ kbd hint and lenient/strict labels, select/deselect all/close buttons
+- **PersonActionBar** — fixed bottom bar for person select mode with select all/deselect/delete (D shortcut)/merge (M shortcut)/exit. Confirmation dialog for delete.
+- **CacheProgress** — sidebar progress bar for active cache jobs (running/paused/error states with pause/resume/retry controls). Hidden when idle or cancelled (cache start moved to SettingsPanel).
 
 ## State Architecture
 
@@ -50,7 +51,7 @@ React 19, TanStack Start/Router (file-based routing), TanStack Query (data fetch
 
 - **useHomeData()** — orchestrates all data fetching for the Home route. Calls useSearchParams, useAppStore, useGroups, all media hooks, usePersons, usePersonMedia, useFaceScan, useSelectMode, useSyncStatus, useLightbox, usePersonMerge, usePrefetch. Auth via `useQuery(['auth'])` (retry: false). Hidden dialogs via `useQuery(['hiddenDialogs'], { enabled: showHiddenDialogs })`. Computes activeSource/activeItems/activeLoading/activeHasMore based on viewMode. Returns unified data bag with all query results, computed state, invalidation callbacks, and URL state helpers.
 - **useHomeHandlers(params)** — event handlers extracted from Home: handleClear, handleHideDialog, handleUnhideDialog, handleUnsyncGroup, handleViewModeChange, handleToggleHiddenDialogs. Uses useQueryClient internally for cache invalidation.
-- **useHomeShortcuts(params)** — all keyboard shortcut registrations (escape, shift+slash, p/g/f/h view mode switches, shift+h, shift+d). Reads setShowShortcuts from useAppStore.
+- **useHomeShortcuts(params)** — all keyboard shortcut registrations (escape, shift+slash, `,` settings toggle, p/g/f/h view mode switches, shift+h, shift+d, S+up/S+down similarity threshold in people view). Reads setShowShortcuts and similarityThreshold from useAppStore.
 
 ### Data hooks
 
@@ -61,7 +62,8 @@ React 19, TanStack Start/Router (file-based routing), TanStack Query (data fetch
 - **useFavoritesMedia(enabled, sort)** — thin wrapper over `useInfiniteMediaQuery` for favorites, query key `['media', 'favorites', { sort }]`. Returns `{ items, loading, error, hasMore, fetchNextPage, removeItem, removeItems }`
 - **usePersonMedia(personId, enabled, sort, faces?)** — thin wrapper over `useInfiniteMediaQuery` for media containing a person's face. Optional `faces` filter (`none`/`solo`/`group`) for filtering by face count. Returns `{ items, loading, error, hasMore, fetchNextPage, removeItem, removeItems }`
 - **usePersons(enabled, similarityThreshold)** — `useQuery` for person list + similar-groups query (enabled when 2+ persons). Returns `{ persons, loading, similarGroups, refetch, invalidate }`
-- **useFaceScan(options)** — `useMutation` for `POST /faces/scan`, `useQuery` polls scan status (`refetchOnMount: 'always'` to detect in-progress scans on navigation). Auto-stops when done/error. Returns `{ scanning, status, startScan }`
+- **useFaceScan(options)** — `useMutation` for `POST /faces/scan`, `useQuery` polls scan status (`refetchOnMount: 'always'` to detect in-progress scans on navigation). Auto-stops when done/error. Post-sync polling: `checkAfterSync()` triggers a few extra poll cycles to detect auto-triggered scans. Returns `{ scanning, status, startScan, checkAfterSync }`
+- **useCacheJob** — `useQuery` polls cache job status, mutations for start/pause/cancel. Returns `{ status, start, pause, cancel }`
 - **useSyncStatus** — triggers sync via `useMutation` (POST `/sync-all`), polls status with TanStack Query `refetchInterval` (2s), auto-stops when all groups reach done/error. Returns `{ syncing, syncStatuses, handleSync }`
 
 ### UI hooks

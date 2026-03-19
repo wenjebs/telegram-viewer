@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useHotkeys } from 'react-hotkeys-hook'
 
 interface Props {
   selectedCount: number
@@ -22,6 +23,22 @@ export default function PersonActionBar({
   onExitSelectMode,
 }: Props) {
   const [showConfirm, setShowConfirm] = useState(false)
+
+  useHotkeys(
+    'd',
+    () => {
+      if (selectedCount >= 1 && !deleting) setShowConfirm(true)
+    },
+    [selectedCount, deleting],
+  )
+
+  useHotkeys(
+    'm',
+    () => {
+      if (selectedCount >= 2 && !merging) onMerge()
+    },
+    [selectedCount, merging, onMerge],
+  )
 
   return (
     <>

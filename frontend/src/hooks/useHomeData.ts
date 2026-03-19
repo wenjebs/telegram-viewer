@@ -263,7 +263,8 @@ export function useHomeData() {
     queryClient.invalidateQueries({ queryKey: ['media'] })
     queryClient.invalidateQueries({ queryKey: ['preview-counts'] })
     invalidateCounts()
-  }, [queryClient, invalidateCounts])
+    faceScan.checkAfterSync()
+  }, [queryClient, invalidateCounts, faceScan])
 
   const { syncing, syncStatuses, handleSync } = useSyncStatus({
     onSyncComplete,

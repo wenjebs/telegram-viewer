@@ -21,6 +21,7 @@ import {
 import { useSearchParams } from '#/hooks/useSearchParam'
 import { useAppStore } from '#/stores/appStore'
 import { useGroups } from '#/hooks/useGroups'
+import { useSelectMode } from '#/hooks/useSelectMode'
 import { formatDateParam } from '#/utils/format'
 
 import CacheProgress from './CacheProgress'
@@ -178,6 +179,7 @@ export default function Sidebar({
   const setSidebarWidth = useAppStore((s) => s.setSidebarWidth)
 
   const { groups, toggleActive, bulkSetActive, previewCounts } = useGroups()
+  const groupSelect = useSelectMode()
 
   const showHiddenDialogs = search.hiddenDialogs ?? false
   const chatTypeFilter = search.chat ?? null
@@ -218,6 +220,16 @@ export default function Sidebar({
   const deferredQuery = useDeferredValue(localSearchQuery)
   const [chatsCollapsed, setChatsCollapsed] = useState(false)
   useHotkeys('c', () => setChatsCollapsed((p) => !p))
+  useHotkeys('comma', () => setShowSettings((p) => !p))
+  useHotkeys(
+    'escape',
+    () => {
+      if (groupSelect.selectedIds.size > 0) {
+        groupSelect.deselectAll()
+      }
+    },
+    [groupSelect.selectedIds.size, groupSelect.deselectAll],
+  )
   const dragging = useRef(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
@@ -344,15 +356,17 @@ export default function Sidebar({
         : groups
   ).filter(syncMatch)
 
-  const filteredHiddenDialogs = deferredQuery.trim()
-    ? hiddenDialogs.filter(
-        (g) =>
-          (!chatTypeFilter || g.type === chatTypeFilter) &&
-          g.name.toLowerCase().includes(deferredQuery.toLowerCase()),
-      )
-    : chatTypeFilter
-      ? hiddenDialogs.filter((g) => g.type === chatTypeFilter)
-      : hiddenDialogs
+  const filteredHiddenDialogs = (
+    deferredQuery.trim()
+      ? hiddenDialogs.filter(
+          (g) =>
+            (!chatTypeFilter || g.type === chatTypeFilter) &&
+            g.name.toLowerCase().includes(deferredQuery.toLowerCase()),
+        )
+      : chatTypeFilter
+        ? hiddenDialogs.filter((g) => g.type === chatTypeFilter)
+        : hiddenDialogs
+  ).filter(syncMatch)
 
   return (
     <aside
@@ -516,12 +530,30 @@ export default function Sidebar({
                           g.active
                             ? 'bg-hover/50 hover:bg-hover'
                             : 'opacity-50 hover:bg-hover hover:opacity-75'
-                        }`}
-                        onClick={() => toggleActive(g)}
+                        } ${groupSelect.selectedIds.has(g.id) ? 'ring-2 ring-accent' : ''}`}
+                        onClick={(e) => {
+                          if (e.shiftKey) {
+                            groupSelect.toggleRange(g.id, filteredGroups)
+                          } else {
+                            if (groupSelect.selectedIds.size > 0) {
+                              groupSelect.deselectAll()
+                            }
+                            groupSelect.setAnchor(g.id)
+                            toggleActive(g)
+                          }
+                        }}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' || e.key === ' ') {
                             e.preventDefault()
-                            toggleActive(g)
+                            if (e.shiftKey) {
+                              groupSelect.toggleRange(g.id, filteredGroups)
+                            } else {
+                              if (groupSelect.selectedIds.size > 0) {
+                                groupSelect.deselectAll()
+                              }
+                              groupSelect.setAnchor(g.id)
+                              toggleActive(g)
+                            }
                           }
                         }}
                         title={

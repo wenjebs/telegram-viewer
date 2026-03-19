@@ -5,20 +5,21 @@ import { useCacheJob } from '#/hooks/useCacheJob'
 
 describe('useCacheJob', () => {
   it('starts idle with no job', async () => {
-    globalThis.fetch = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          status: 'idle',
-          total_items: 0,
-          cached_items: 0,
-          skipped_items: 0,
-          failed_items: 0,
-          bytes_cached: 0,
-          flood_wait_until: null,
-          error: null,
-        }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } },
-      ),
+    globalThis.fetch = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            status: 'idle',
+            total_items: 0,
+            cached_items: 0,
+            skipped_items: 0,
+            failed_items: 0,
+            bytes_cached: 0,
+            flood_wait_until: null,
+            error: null,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
     ) as unknown as typeof fetch
 
     const { result } = renderHook(() => useCacheJob(), {
@@ -86,10 +87,10 @@ describe('useCacheJob', () => {
             ? input.toString()
             : input.url
       if (url.includes('/pause')) {
-        return new Response(
-          JSON.stringify({ status: 'paused' }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } },
-        )
+        return new Response(JSON.stringify({ status: 'paused' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
       }
       if (url.includes('/status')) {
         return new Response(

@@ -130,6 +130,45 @@ describe('useFaceScan', () => {
     await waitFor(() => expect(result.current.scanning).toBe(true))
   })
 
+  it('checkAfterSync invalidates query and enables temporary polling', async () => {
+    let statusCallCount = 0
+
+    globalThis.fetch = vi.fn(async () => {
+      statusCallCount++
+      // First call returns idle, subsequent calls return scanning
+      const status =
+        statusCallCount <= 1
+          ? { status: 'idle', scanned: 0, total: 0, person_count: 0 }
+          : {
+              status: 'scanning',
+              scanned: 3,
+              total: 10,
+              person_count: 0,
+            }
+      return new Response(JSON.stringify(status), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }) as unknown as typeof fetch
+
+    const { result } = renderHook(
+      () => useFaceScan({ onScanComplete: vi.fn() }),
+      { wrapper: createWrapper() },
+    )
+
+    // Wait for initial idle status
+    await waitFor(() => expect(result.current.status.status).toBe('idle'))
+    expect(result.current.scanning).toBe(false)
+
+    // Simulate sync completing — trigger checkAfterSync
+    act(() => result.current.checkAfterSync())
+
+    // Should detect the scanning status and set scanning=true
+    await waitFor(() => expect(result.current.scanning).toBe(true), {
+      timeout: 5000,
+    })
+  })
+
   it('provides default status when no data yet', () => {
     globalThis.fetch = vi.fn(
       async () =>

@@ -154,6 +154,7 @@ body {
 
 button,
 a {
+  cursor: pointer;
   transition:
     background-color 180ms ease,
     color 180ms ease,

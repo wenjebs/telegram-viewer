@@ -40,6 +40,8 @@ export function useHomeShortcuts(params: UseHomeShortcutsParams) {
   } = params
 
   const setShowShortcuts = useAppStore((s) => s.setShowShortcuts)
+  const similarityThreshold = useAppStore((s) => s.similarityThreshold)
+  const setSimilarityThreshold = useAppStore((s) => s.setSimilarityThreshold)
 
   // Escape key
   useHotkeys(
@@ -98,5 +100,27 @@ export function useHomeShortcuts(params: UseHomeShortcutsParams) {
       }
     },
     [lightboxItem, selectMode.active, groups],
+  )
+
+  // Similarity threshold (people view)
+  useHotkeys(
+    's+up',
+    () => {
+      if (viewMode !== 'people' || lightboxItem) return
+      setSimilarityThreshold(
+        Math.min(1, Math.round((similarityThreshold + 0.01) * 100) / 100),
+      )
+    },
+    [viewMode, lightboxItem, similarityThreshold],
+  )
+  useHotkeys(
+    's+down',
+    () => {
+      if (viewMode !== 'people' || lightboxItem) return
+      setSimilarityThreshold(
+        Math.max(0, Math.round((similarityThreshold - 0.01) * 100) / 100),
+      )
+    },
+    [viewMode, lightboxItem, similarityThreshold],
   )
 }

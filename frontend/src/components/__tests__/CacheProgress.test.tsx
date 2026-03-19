@@ -17,7 +17,7 @@ function renderWithWrapper(ui: React.ReactElement) {
 }
 
 describe('CacheProgress', () => {
-  it('shows start button when idle', () => {
+  it('renders nothing when idle', () => {
     mockUseCacheJob.mockReturnValue({
       status: {
         status: 'idle',
@@ -36,8 +36,8 @@ describe('CacheProgress', () => {
       isPaused: false,
       isCompleted: false,
     })
-    renderWithWrapper(<CacheProgress />)
-    expect(screen.getByText(/cache all media/i)).toBeInTheDocument()
+    const { container } = renderWithWrapper(<CacheProgress />)
+    expect(container.innerHTML).toBe('')
   })
 
   it('shows progress when running', () => {
@@ -87,18 +87,18 @@ describe('CacheProgress', () => {
     expect(screen.getByText(/paused/i)).toBeInTheDocument()
   })
 
-  it('calls start when start button clicked', () => {
+  it('calls start when retry button clicked in error state', () => {
     const startFn = vi.fn()
     mockUseCacheJob.mockReturnValue({
       status: {
-        status: 'idle',
-        total_items: 0,
-        cached_items: 0,
+        status: 'error',
+        total_items: 100,
+        cached_items: 80,
         skipped_items: 0,
-        failed_items: 0,
-        bytes_cached: 0,
+        failed_items: 20,
+        bytes_cached: 5000000,
         flood_wait_until: null,
-        error: null,
+        error: 'Download failed',
       },
       start: startFn,
       pause: vi.fn(),
@@ -108,7 +108,7 @@ describe('CacheProgress', () => {
       isCompleted: false,
     })
     renderWithWrapper(<CacheProgress />)
-    fireEvent.click(screen.getByText(/cache all media/i))
+    fireEvent.click(screen.getByText(/retry/i))
     expect(startFn).toHaveBeenCalled()
   })
 

@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { startFaceScan, getFaceScanStatus } from '#/api/client'
 import type { FaceScanStatus } from '#/api/schemas'
@@ -10,6 +10,9 @@ export function useFaceScan({
   onScanComplete: () => void
 }) {
   const [scanning, setScanning] = useState(false)
+  const queryClient = useQueryClient()
+  // After sync, poll a few extra times to catch an auto-triggered scan
+  const postSyncPollRef = useRef(0)
 
   const scanMutation = useMutation({
     mutationFn: (force: boolean) => startFaceScan(force),
@@ -24,9 +27,14 @@ export function useFaceScan({
     refetchInterval: (query) => {
       const data = query.state.data
       if (!data) return 2000
-      return data.status === 'scanning' || data.status === 'clustering'
-        ? 2000
-        : false
+      if (data.status === 'scanning' || data.status === 'clustering')
+        return 2000
+      // Keep polling briefly after sync to detect auto-triggered scan
+      if (postSyncPollRef.current > 0) {
+        postSyncPollRef.current--
+        return 2000
+      }
+      return false
     },
   })
 
@@ -45,6 +53,12 @@ export function useFaceScan({
     }
   }, [scanning, status, onScanComplete])
 
+  // Called after sync completes to start watching for auto-triggered scan
+  const checkAfterSync = useCallback(() => {
+    postSyncPollRef.current = 5
+    queryClient.invalidateQueries({ queryKey: ['faceScanStatus'] })
+  }, [queryClient])
+
   return {
     scanning,
     status:
@@ -56,5 +70,6 @@ export function useFaceScan({
         person_count: 0,
       } as FaceScanStatus),
     startScan: scanMutation.mutate,
+    checkAfterSync,
   }
 }

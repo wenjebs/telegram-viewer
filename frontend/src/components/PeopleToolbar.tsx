@@ -45,7 +45,16 @@ export default function PeopleToolbar({
       />
       <span className="flex-1" />
       <div className="flex items-center gap-2">
-        <span className="text-xs text-text-soft">Similarity</span>
+        <span
+          className="text-xs text-text-soft"
+          title="How closely faces must match to be grouped as the same person. Higher = stricter."
+        >
+          Similarity
+        </span>
+        <kbd className="rounded bg-surface-alt px-1 text-[10px] text-text-soft/50">
+          S+↑↓
+        </kbd>
+        <span className="text-[10px] text-text-soft/40">lenient</span>
         <input
           type="range"
           min="0"
@@ -55,6 +64,7 @@ export default function PeopleToolbar({
           onChange={(e) => onThresholdChange(Number(e.target.value))}
           className="h-2 w-36 cursor-pointer appearance-none rounded-full bg-surface-alt accent-accent"
         />
+        <span className="text-[10px] text-text-soft/40">strict</span>
         <input
           type="number"
           min="0"

@@ -56,13 +56,14 @@
 
 Note: Static routes (/hidden, /favorites, /unhide-batch, /hide-batch, /delete-batch, /download-zip, /prepare-zip, /zip-status, /zip-download, /count, /ids) must be defined before /{media_id} parameterized routes.
 
-**Faces** (`/faces`, 11 endpoints):
+**Faces** (`/faces`, 15 endpoints):
 - `GET /scan-status` — returns `{status, scanned, total, person_count}`. Status: idle/scanning/clustering/done/error
 - `POST /scan` — starts background face scan (InsightFace detection + DBSCAN clustering). `?force=true` clears all face data first. Returns `{started: false, status, scanned, total}` if scan already running (idempotent 200)
-- `GET /persons` — list all detected persons with metadata (display_name, face_count, avatar_crop_path)
+- `GET /persons` — list all detected persons with metadata (display_name, face_count, avatar_crop_path). Optional `min_sharpness` query param to filter by representative face sharpness
 - `POST /persons/merge` — merge two persons: moves all faces from `merge_id` to `keep_id`
 - `POST /persons/merge-batch` — merge multiple persons into one: moves all faces from `merge_ids[]` to `keep_id`
 - `GET /persons/similar-groups` — find groups of similar persons via cosine similarity (threshold query param, default 0.4)
+- `DELETE /persons/delete-batch` — delete multiple persons and unassign all their faces
 - `POST /persons/conflicts` — accepts `{media_ids: int[], exclude_person_id: int}`, returns persons with faces in those media items (excluding specified person)
 - `GET /persons/{person_id}` — single person with face count, representative face, avatar crop
 - `DELETE /persons/{person_id}` — delete person and unassign all their faces
@@ -71,6 +72,12 @@ Note: Static routes (/hidden, /favorites, /unhide-batch, /hide-batch, /delete-ba
 - `GET /persons/{person_id}/media` — cursor-paginated media items containing a person's face. Optional `faces` filter (`none`/`solo`/`group`) for filtering by face count
 - `GET /persons/{person_id}/media/ids` — all media IDs for a person, returns `{ids: int[]}`
 - `GET /{face_id}/crop` — JPEG face crop image (30% bbox expansion, 112x112 resize)
+
+**Cache** (`/media/cache`, 4 endpoints):
+- `GET /status` — get cache job state (status, progress counts, bytes cached, flood wait)
+- `POST /start` — start async media caching (thumbnails + full files for all uncached items)
+- `POST /pause` — pause running cache job
+- `POST /cancel` — cancel running cache job
 
 **Settings** (`/settings`, 2 endpoints):
 - `GET /export` — export all user preferences (hidden/inactive groups, hidden/favorited media, person names) as JSON file attachment with version metadata
@@ -86,9 +93,11 @@ Note: Static routes (/hidden, /favorites, /unhide-batch, /hide-batch, /delete-ba
 
 **persons**: id (PK), name, representative_face_id, face_count, created_at, updated_at. Detected face clusters.
 
-**faces**: id (PK), media_id, person_id, embedding (BLOB), bbox_x/y/w/h (REAL, normalized 0-1), confidence, crop_path, created_at. Indexes on media_id, person_id.
+**faces**: id (PK), media_id, person_id, embedding (BLOB), bbox_x/y/w/h (REAL, normalized 0-1), confidence, crop_path, created_at, pitch/yaw/roll (REAL, face pose angles), sharpness (REAL, face sharpness score). Indexes on media_id, person_id.
 
 **face_scan_state**: id (PK, singleton), status, scanned_count, total_count, last_scanned_media_id, last_error, updated_at. Tracks face scan progress.
+
+**cache_jobs**: id (PK, singleton), status ('idle'|'running'|'paused'|'error'|'cancelled'|'completed'), total_items, cached_items, skipped_items, failed_items, bytes_cached, last_media_id, flood_wait_until, started_at, completed_at, error, updated_at. Tracks bulk media caching progress.
 
 Schema init uses CREATE TABLE IF NOT EXISTS + try/catch ALTER TABLE for migrations.
 
@@ -124,4 +133,4 @@ Telethon wrapper (`TelegramClientWrapper`) with:
 - `face_scanner.py` — InsightFace detection + DBSCAN clustering pipeline
 - `utils.py` — `fire_and_forget()` background task tracking with done-callback cleanup and error logging, `utc_now_iso()` ISO 8601 UTC timestamp helper, `parse_cursor()` composite cursor parsing, `build_media_response()` response normalization + pagination cursor
 - `deps.py` — FastAPI dependency injection (`get_db`, `get_tg`, `get_sync_status`, `get_background_tasks`, `get_zip_jobs`)
-- `routes/` — auth.py, groups.py, media.py, faces.py, settings.py
+- `routes/` — auth.py, groups.py, media.py, faces.py, cache.py, settings.py
