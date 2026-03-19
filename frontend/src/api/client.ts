@@ -3,6 +3,7 @@ import {
   AuthStatus,
   ConflictsResponse,
   CountResponse,
+  DeleteResponse,
   FaceScanStatus,
   IdsResponse,
   Group,
@@ -240,6 +241,16 @@ export const getHiddenMedia = (params: {
 
 export const getHiddenCount = () =>
   fetchJSON('/media/hidden/count', CountResponse)
+
+export const deleteMediaBatch = (mediaIds: number[]) =>
+  fetchJSON('/media/delete-batch', DeleteResponse, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ media_ids: mediaIds }),
+  })
+
+export const deleteAllHidden = () =>
+  fetchJSON('/media/hidden', DeleteResponse, { method: 'DELETE' })
 
 // Favorites
 export const toggleFavorite = (mediaId: number) =>

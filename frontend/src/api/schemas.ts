@@ -4,6 +4,7 @@ import { z } from 'zod'
 export const SuccessResponse = z.object({ success: z.boolean() })
 export const CountResponse = z.object({ count: z.number() })
 export const IdsResponse = z.object({ ids: z.array(z.number()) })
+export const DeleteResponse = z.object({ deleted: z.number() })
 
 // --- Domain schemas ---
 export const AuthStatus = z.object({ authenticated: z.boolean() })
@@ -125,6 +126,7 @@ export type ZipStatusResponse = z.infer<typeof ZipStatusResponse>
 export type PreviewCountItem = z.infer<typeof PreviewCountItem>
 export type PreviewCounts = z.infer<typeof PreviewCounts>
 export type IdsResponse = z.infer<typeof IdsResponse>
+export type DeleteResponse = z.infer<typeof DeleteResponse>
 export type ImportResult = z.infer<typeof ImportResult>
 export type ConflictPerson = z.infer<typeof ConflictPerson>
 export type ConflictsResponse = z.infer<typeof ConflictsResponse>
