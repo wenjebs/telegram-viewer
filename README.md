@@ -1,6 +1,71 @@
+<div align="center">
+
+![Telegram Viewer](assets/logo-animated.gif)
+
 # Telegram Viewer
 
 A self-hosted web app for browsing and searching your Telegram media — photos, videos, and files — with face detection and filtering.
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+![Docker](https://img.shields.io/badge/Docker-ready-blue?logo=docker&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-blue?logo=typescript&logoColor=white)
+![Python](https://img.shields.io/badge/Python-blue?logo=python&logoColor=white)
+
+</div>
+
+<div align="center">
+
+![Demo](assets/demo.gif)
+
+</div>
+
+## Features
+
+<table>
+<tr>
+<td width="50%">
+
+**📸 Media Browser**
+
+Browse photos, videos & files from your Telegram chats in a fast, searchable grid.
+
+</td>
+<td width="50%">
+
+**👤 Face Detection**
+
+Auto-detect faces and filter your photos by person using on-device AI.
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+**🔍 Search & Filter**
+
+Search by chat, date range, and media type to find exactly what you need.
+
+</td>
+<td width="50%">
+
+**🔒 Self-Hosted**
+
+Your data stays on your machine. No cloud, no tracking, fully private.
+
+</td>
+</tr>
+</table>
+
+## Architecture
+
+```mermaid
+graph LR
+    A["🌐 Browser<br/><sub>https://tele.view</sub>"] --> B["Caddy<br/><sub>HTTPS Reverse Proxy</sub>"]
+    B --> C["Frontend<br/><sub>React 19 + TanStack</sub>"]
+    B --> D["Backend<br/><sub>FastAPI + SQLite</sub>"]
+```
+
+Data is stored in Docker volumes (`app-data` for the SQLite DB and cache, `insightface-models` for face detection models).
 
 ## Quick Start (Docker)
 
@@ -60,16 +125,6 @@ sudo cp /tmp/caddy-ca.crt /usr/local/share/ca-certificates/caddy-local.crt && su
 
 # 5. Open https://tele.view
 ```
-
-## Architecture
-
-| Service | Description |
-|---------|-------------|
-| **frontend** | TanStack Start (React 19) web UI |
-| **backend** | FastAPI Python API — syncs Telegram data, serves media, runs face detection |
-| **caddy** | Reverse proxy — HTTPS with auto-generated local certs |
-
-Data is stored in Docker volumes (`app-data` for the SQLite DB and cache, `insightface-models` for face detection models).
 
 ## Managing the App
 
