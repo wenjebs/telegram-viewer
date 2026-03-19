@@ -15,19 +15,22 @@ Delete photos and persons from the PersonDetail view (`?mode=people&person={id}`
 
 Delete a person and all associated face data. Photos remain in the gallery.
 
-**Steps:**
-1. Delete all face crop files for the person (`cache/faces/{face_id}.jpg`)
-2. Delete all `faces` rows where `person_id = {person_id}`
-3. Reset `media_items.face_count` for affected media (recount from remaining faces)
-4. Delete the `persons` row
-5. Return `{ success: true }`
+**Steps (in a single transaction):**
+1. Collect `crop_path` values from `faces` rows where `person_id = {person_id}`
+2. Collect affected `media_id` values from those face rows
+3. Delete all `faces` rows where `person_id = {person_id}`
+4. Recount `media_items.face_count` for affected media: `UPDATE media_items SET face_count = (SELECT COUNT(*) FROM faces WHERE media_id = media_items.id) WHERE id IN (...)`
+5. Delete the `persons` row
+6. Commit transaction
+7. Delete crop files from collected paths (after commit, following existing pattern in `clear_chat_media`)
+8. Return `{ success: true }`
 
 **Error cases:**
 - 404 if person does not exist
 
-### `POST /media/other-persons`
+### `POST /faces/persons/conflicts`
 
-Batch check for cross-person conflicts before hiding photos.
+Batch check for cross-person conflicts before hiding photos. Placed under the faces router since it queries faces/persons tables.
 
 **Request body:**
 ```json
@@ -52,7 +55,7 @@ Batch check for cross-person conflicts before hiding photos.
 }
 ```
 
-Only returns entries where other persons (besides `exclude_person_id`) have faces in the photo. Empty array if no conflicts.
+Only returns entries where other persons (besides `exclude_person_id`) have faces in the photo. Empty array if no conflicts. Includes all linked persons regardless of whether their other photos are hidden — the warning is about face data linkage, not visibility.
 
 **Query:**
 ```sql
@@ -88,26 +91,29 @@ Reuse existing `useSelectMode()` hook for the person media grid.
 - Shift+click selects range
 - Cmd+click toggles single
 
-**SelectionBar:** Reuse existing `SelectionBar` component with `viewMode='people'`. Actions shown:
-- Select All / Deselect
-- Hide (keyboard shortcut `H`)
-- Download
-- Cancel (exit select mode)
+**SelectionBar:** Reuse existing `SelectionBar` component with `viewMode='people'`. Modify `SelectionBar` to handle people mode:
+- Suppress the Favorite button (not relevant in person view)
+- Accept an `onBeforeHide` callback that intercepts the hide action — this is where the cross-person conflict check runs. If `onBeforeHide` returns `true`, proceed with hide. If `false`, the hide is cancelled (conflict modal handles it).
+- Actions shown: Select All / Deselect, Hide (`H`), Download, Cancel
 
 ### Context menu — Right-click single photo
 
-Right-click on a photo in person view shows a minimal context menu:
-- "Hide photo" — hides the single photo (with cross-person warning if applicable)
+New `PhotoContextMenu` component shown on right-click in person media grid.
 
-Implementation: simple `onContextMenu` handler that shows a positioned dropdown. Dismiss on click outside or Escape.
+**Behavior:**
+- Positioned at cursor, clamped to viewport edges
+- Shows "Hide photo" action (triggers cross-person warning flow for that single photo)
+- Not shown during select mode (select mode has its own UI)
+- Dismissed on click outside, Escape, or scroll
+- z-index above SelectionBar (z-50)
 
 ### Cross-person warning modal
 
-Triggered before hiding (single or batch) when conflicts exist.
+New `CrossPersonWarningModal` component. Triggered before hiding (single or batch) when conflicts exist.
 
 **Flow:**
 1. User clicks Hide (or context menu "Hide photo")
-2. Call `POST /media/other-persons` with selected media IDs + current person ID
+2. Call `POST /faces/persons/conflicts` with selected media IDs + current person ID
 3. If `conflicts` is empty → hide immediately via `hideMediaBatch`
 4. If conflicts exist → show confirmation modal:
    > "These photos also appear in other people's views:
@@ -122,24 +128,28 @@ Triggered before hiding (single or batch) when conflicts exist.
 ### Post-hide invalidation
 
 After hiding photos from person view:
-- Invalidate person media query (photos disappear from grid)
-- Invalidate persons query (face counts may change — hidden photos' faces still exist but media is hidden)
+- Invalidate person media query (hidden photos filtered out by `hidden_at IS NULL` in `get_person_media_page`)
+- Invalidate persons query (note: `persons.face_count` does NOT change — it counts face rows which are untouched by hiding. But the visible photo count in the person grid decreases.)
 - Toast: "{n} photos hidden"
+
+### Edge case: all photos hidden
+
+If all photos for a person are hidden, the person media grid shows an empty state. The person still appears in the people grid (face data intact). User can delete the person if they no longer want it, or unhide photos from the existing hidden view.
 
 ## Files to modify
 
 **Backend:**
-- `backend/routes/faces.py` — new `DELETE /faces/persons/{id}` endpoint
-- `backend/routes/media.py` — new `POST /media/other-persons` endpoint
-- `backend/database.py` — new `delete_person()` and `get_other_persons_for_media()` functions
+- `backend/routes/faces.py` — new `DELETE /faces/persons/{id}` endpoint + `POST /faces/persons/conflicts` endpoint
+- `backend/database.py` — new `delete_person()` and `get_cross_person_conflicts()` functions
 
 **Frontend:**
 - `frontend/src/components/PersonDetail.tsx` — add Delete button + confirmation dialog
-- `frontend/src/routes/index.tsx` — wire up selection mode for person media grid, add context menu
-- `frontend/src/api/client.ts` — add `deletePerson()` and `getOtherPersonsForMedia()` API functions
-- `frontend/src/api/schemas.ts` — add response schema for other-persons endpoint
-- `frontend/src/components/SelectionBar.tsx` — no changes needed (already supports `viewMode='people'`)
-- `frontend/src/components/CrossPersonWarningModal.tsx` — new component for the conflict confirmation
+- `frontend/src/components/SelectionBar.tsx` — add people mode branch (suppress Favorite, add `onBeforeHide` interception)
+- `frontend/src/components/PhotoContextMenu.tsx` — new context menu component
+- `frontend/src/components/CrossPersonWarningModal.tsx` — new conflict confirmation modal
+- `frontend/src/routes/index.tsx` — wire up selection mode for person media grid, integrate context menu + warning flow
+- `frontend/src/api/client.ts` — add `deletePerson()` and `getCrossPersonConflicts()` API functions
+- `frontend/src/api/schemas.ts` — add response schema for conflicts endpoint
 
 ## Out of scope
 
