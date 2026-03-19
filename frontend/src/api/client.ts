@@ -136,6 +136,13 @@ export const unhideDialogBatch = (dialogIds: number[]) =>
     body: JSON.stringify({ dialog_ids: dialogIds }),
   })
 
+export const hideDialogBatch = (dialogIds: number[]) =>
+  fetchJSON('/groups/hide-batch', SuccessResponse, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ dialog_ids: dialogIds }),
+  })
+
 export const getHiddenDialogs = () =>
   fetchJSON('/groups/hidden', z.array(Group))
 
@@ -380,18 +387,14 @@ export const startCacheJob = () =>
   )
 
 export const pauseCacheJob = () =>
-  fetchJSON(
-    '/media/cache/pause',
-    z.object({ status: z.string() }),
-    { method: 'POST' },
-  )
+  fetchJSON('/media/cache/pause', z.object({ status: z.string() }), {
+    method: 'POST',
+  })
 
 export const cancelCacheJob = () =>
-  fetchJSON(
-    '/media/cache/cancel',
-    z.object({ status: z.string() }),
-    { method: 'POST' },
-  )
+  fetchJSON('/media/cache/cancel', z.object({ status: z.string() }), {
+    method: 'POST',
+  })
 
 // Faces
 export const getFaceScanStatus = () =>
