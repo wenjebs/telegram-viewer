@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from httpx import AsyncClient, ASGITransport
 from main import app
-from database import insert_media_item, hide_media_item, favorite_media_item
+from database import insert_media_item, hide_media_item, hide_media_items, favorite_media_item
 from helpers import make_media_item
 
 
@@ -734,3 +734,82 @@ async def test_list_favorites_media_sort_asc(seeded_db):
     assert len(data["items"]) == 2
     fav_ats = [item["favorited_at"] for item in data["items"]]
     assert fav_ats == sorted(fav_ats)
+
+
+# ---------------------------------------------------------------------------
+# Permanent delete
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_delete_batch_success(seeded_db):
+    # seeded_db creates exactly 3 items (see seeded_db fixture)
+    async with _client() as client:
+        items = (await client.get("/media?limit=3")).json()["items"]
+    ids = [items[0]["id"], items[1]["id"]]
+    await hide_media_items(seeded_db, ids)
+
+    async with _client() as client:
+        resp = await client.request("DELETE", "/media/delete-batch", json={"media_ids": ids})
+    assert resp.status_code == 200
+    assert resp.json()["deleted"] == 2
+
+    # Verify items are gone (1 of 3 remains)
+    async with _client() as client:
+        resp = await client.get("/media?limit=10")
+    assert len(resp.json()["items"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_delete_batch_filters_to_hidden_only(seeded_db):
+    """Non-hidden items in the batch are silently ignored."""
+    async with _client() as client:
+        items = (await client.get("/media?limit=3")).json()["items"]
+    # Hide only one
+    await hide_media_items(seeded_db, [items[0]["id"]])
+
+    async with _client() as client:
+        resp = await client.request(
+            "DELETE", "/media/delete-batch",
+            json={"media_ids": [items[0]["id"], items[1]["id"]]},
+        )
+    assert resp.status_code == 200
+    # Only the hidden one was deleted
+    assert resp.json()["deleted"] == 1
+
+    # The non-hidden item still exists (2 of 3 remain)
+    async with _client() as client:
+        resp = await client.get("/media?limit=10")
+    assert len(resp.json()["items"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_delete_batch_empty_validation_error(seeded_db):
+    async with _client() as client:
+        resp = await client.request("DELETE", "/media/delete-batch", json={"media_ids": []})
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_delete_all_hidden(seeded_db):
+    async with _client() as client:
+        items = (await client.get("/media?limit=3")).json()["items"]
+    await hide_media_items(seeded_db, [items[0]["id"], items[1]["id"]])
+
+    async with _client() as client:
+        resp = await client.request("DELETE", "/media/hidden")
+    assert resp.status_code == 200
+    assert resp.json()["deleted"] == 2
+
+    # Hidden count is now 0
+    async with _client() as client:
+        resp = await client.get("/media/hidden/count")
+    assert resp.json()["count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_delete_all_hidden_when_none_hidden(seeded_db):
+    async with _client() as client:
+        resp = await client.request("DELETE", "/media/hidden")
+    assert resp.status_code == 200
+    assert resp.json()["deleted"] == 0

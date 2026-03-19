@@ -29,6 +29,7 @@ from database import (
     get_hidden_media_page,
     get_hidden_count,
     get_hidden_media_ids,
+    delete_media_items_permanently,
     favorite_media_item,
     favorite_media_items,
     unfavorite_media_item,
@@ -423,6 +424,42 @@ async def hide_media_batch(
 ):
     await hide_media_items(db, body.media_ids)
     return {"success": True}
+
+
+@router.delete("/delete-batch")
+async def delete_media_batch_endpoint(
+    body: BatchIdsRequest,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    # Safety guard: only delete items that are actually hidden
+    placeholders = ", ".join("?" for _ in body.media_ids)
+    async with await db.execute(
+        f"SELECT id FROM media_items WHERE id IN ({placeholders}) AND hidden_at IS NOT NULL",
+        body.media_ids,
+    ) as cursor:
+        hidden_ids = [row[0] for row in await cursor.fetchall()]
+
+    deleted, file_paths = await delete_media_items_permanently(db, hidden_ids)
+    for path in file_paths:
+        try:
+            Path(path).unlink(missing_ok=True)
+        except OSError:
+            logger.warning("Failed to delete file: %s", path)
+    return {"deleted": deleted}
+
+
+@router.delete("/hidden")
+async def delete_all_hidden_endpoint(
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    hidden_ids = await get_hidden_media_ids(db)
+    deleted, file_paths = await delete_media_items_permanently(db, hidden_ids)
+    for path in file_paths:
+        try:
+            Path(path).unlink(missing_ok=True)
+        except OSError:
+            logger.warning("Failed to delete file: %s", path)
+    return {"deleted": deleted}
 
 
 @router.post("/favorite-batch")
