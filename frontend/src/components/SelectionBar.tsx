@@ -21,6 +21,7 @@ interface Props {
   onFavorite?: () => void
   onUnfavorite?: () => void
   onBeforeHide?: () => Promise<boolean> | boolean
+  onDelete?: () => void
 }
 
 export default function SelectionBar({
@@ -36,6 +37,7 @@ export default function SelectionBar({
   onFavorite,
   onUnfavorite,
   onBeforeHide,
+  onDelete,
 }: Props) {
   const [selectingAll, setSelectingAll] = useState(false)
   const [unhiding, setUnhiding] = useState(false)
@@ -131,11 +133,19 @@ export default function SelectionBar({
   handleUnfavoriteRef.current = handleUnfavorite
   const viewModeRef = useRef(viewMode)
   viewModeRef.current = viewMode
+  const onDeleteRef = useRef(onDelete)
+  onDeleteRef.current = onDelete
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (e.key === 'h' || e.key === 'H') {
       e.preventDefault()
       handleHideRef.current()
+    }
+    if (e.key === 'Backspace' || e.key === 'Delete') {
+      if (viewModeRef.current === 'hidden' && onDeleteRef.current) {
+        e.preventDefault()
+        onDeleteRef.current()
+      }
     }
     if (e.key === 'f' || e.key === 'F') {
       e.preventDefault()
@@ -178,13 +188,24 @@ export default function SelectionBar({
           </button>
         )}
         {viewMode === 'hidden' ? (
-          <button
-            className="rounded-lg bg-success px-4 py-1.5 text-sm font-semibold text-white hover:bg-success/80 disabled:opacity-50"
-            onClick={handleUnhide}
-            disabled={selectedCount === 0 || unhiding}
-          >
-            {unhiding ? 'Unhiding...' : 'Unhide'}
-          </button>
+          <div className="flex gap-2">
+            <button
+              className="rounded-lg bg-success px-4 py-1.5 text-sm font-semibold text-white hover:bg-success/80 disabled:opacity-50"
+              onClick={handleUnhide}
+              disabled={selectedCount === 0 || unhiding}
+            >
+              {unhiding ? 'Unhiding...' : 'Unhide'}
+            </button>
+            {onDelete && (
+              <button
+                className="rounded-lg bg-danger px-4 py-1.5 text-sm font-semibold text-white hover:bg-danger/80 disabled:opacity-50"
+                onClick={onDelete}
+                disabled={selectedCount === 0}
+              >
+                Delete <span className="text-xs text-white/40">⌫</span>
+              </button>
+            )}
+          </div>
         ) : (
           <>
             {viewMode !== 'people' &&

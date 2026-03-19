@@ -104,4 +104,26 @@ describe('SelectionBar', () => {
     expect(screen.queryByText(/Favorite/)).toBeNull()
     expect(screen.getByText('Hide')).toBeTruthy()
   })
+
+  it('shows Delete button in hidden mode', () => {
+    render(
+      <SelectionBar {...defaultProps} viewMode="hidden" onDelete={vi.fn()} />,
+    )
+    expect(screen.getByText('Delete')).toBeTruthy()
+    expect(screen.getByText('Unhide')).toBeTruthy()
+  })
+
+  it('calls onDelete when Delete clicked in hidden mode', () => {
+    const onDelete = vi.fn()
+    render(
+      <SelectionBar {...defaultProps} viewMode="hidden" onDelete={onDelete} />,
+    )
+    fireEvent.click(screen.getByText('Delete'))
+    expect(onDelete).toHaveBeenCalled()
+  })
+
+  it('does not show Delete button in normal mode', () => {
+    render(<SelectionBar {...defaultProps} viewMode="normal" />)
+    expect(screen.queryByText('Delete')).toBeNull()
+  })
 })
